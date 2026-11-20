@@ -12,17 +12,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# Style personnalisé pour se rapprocher de l'Excel (Rouge Alcomix)
 st.markdown("""
 <style>
     .stDataFrame { border: 1px solid #b30000; }
     h1, h2, h3 { color: #b30000; }
-    div[data-testid="stMetricValue"] { color: #b30000; }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# DONNÉES 2026
+# DONNÉES 2026 (Valeurs Nettes)
 # ============================================================
 DONNEES_2026 = {
     "Alcomix": {
@@ -84,7 +82,7 @@ DONNEES_2026 = {
 PRODUITS_ARRETES = ["BOTA Fresh 50 cl VER", "Racines 33 cl VER"]
 
 # ============================================================
-# INITIALISATION DES DONNÉES ET POIDS (CASCADE)
+# INITIALISATION DES DONNÉES
 # ============================================================
 @st.cache_data
 def preparer_donnees():
@@ -95,116 +93,132 @@ def preparer_donnees():
                 rows.append({"Segment": segment, "Marque": marque, "Article": article, "Volume_2026": volume})
     df = pd.DataFrame(rows)
     
-    # Arrêt des produits
+    # Gestion des arrêts de produits
     df["Volume_2026_Ajuste"] = df.apply(lambda row: 0 if row["Article"] in PRODUITS_ARRETES else row["Volume_2026"], axis=1)
     
-    # 1. Poids du Segment dans le Total
+    # CALCUL DES POIDS STABLES (Part de l'article dans le Total Global)
     total_global = df["Volume_2026_Ajuste"].sum()
-    df["Poids_Seg_Total"] = df["Volume_2026_Ajuste"] / total_global
-    
-    # 2. Poids de la Marque dans le Segment
-    vol_par_seg = df.groupby("Segment")["Volume_2026_Ajuste"].transform("sum")
-    df["Poids_Marq_Seg"] = df["Volume_2026_Ajuste"] / vol_par_seg
-    
-    # 3. Poids de l'Article dans la Marque
-    vol_par_marq = df.groupby("Marque")["Volume_2026_Ajuste"].transform("sum")
-    df["Poids_Art_Marq"] = df["Volume_2026_Ajuste"] / vol_par_marq
+    df["Poids_Global"] = df["Volume_2026_Ajuste"] / total_global
     
     return df, total_global
 
 df_base, TOTAL_2026 = preparer_donnees()
 
 # ============================================================
-# SIDEBAR : PILOTAGE DES OBJECTIFS
+# SIDEBAR : PILOTAGE GLOBAL
 # ============================================================
-st.sidebar.header("🎯 Objectifs Annuels Globaux")
-obj_2027 = st.sidebar.number_input("Objectif 2027", min_value=0, value=4600000, step=100000)
-obj_2028 = st.sidebar.number_input("Objectif 2028", min_value=0, value=4900000, step=100000)
-obj_2029 = st.sidebar.number_input("Objectif 2029", min_value=0, value=5250000, step=100000)
-obj_2030 = st.sidebar.number_input("Objectif 2030", min_value=0, value=5600000, step=100000)
-obj_2031 = st.sidebar.number_input("Objectif 2031", min_value=0, value=6000000, step=100000)
+st.sidebar.header("🎯 Objectif Global (Total Entreprise)")
+objectif_global_2031 = st.sidebar.number_input(
+    "Objectif Total 2031 (unités)", 
+    min_value=int(TOTAL_2026), 
+    value=6000000, 
+    step=100000
+)
 
-objectifs = {2027: obj_2027, 2028: obj_2028, 2029: obj_2029, 2030: obj_2030, 2031: obj_2031}
+# ============================================================
+# CALCULS DE LA SIMULATION
+# ============================================================
+# On calcule les objectifs globaux par année (avec une croissance lissée)
+# Ex: 2026 = 4.3M, 2027 = +5%, 2028 = +5%, etc.
+# Mais on laisse l'utilisateur modifier le tableau pour écraser ces valeurs.
 
-# ============================================================
-# CALCULS DE LA CASCADE POUR LA SIMULATION
-# ============================================================
 df_sim = df_base.copy()
 df_sim.rename(columns={"Volume_2026_Ajuste": "2026"}, inplace=True)
 
-for annee, objectif in objectifs.items():
-    # CASCADE : On applique le poids du segment au total, etc.
-    df_sim[str(annee)] = objectif * df_sim["Poids_Seg_Total"] * df_sim["Poids_Marq_Seg"] * df_sim["Poids_Art_Marq"]
+# Calcul de la répartition initiale basée sur l'objectif 2031
+df_sim["2031"] = df_sim["Poids_Global"] * objectif_global_2031
+
+# Interpolation pour les années intermédiaires (Croissance linéaire)
+df_sim["2027"] = df_sim["2026"] + (df_sim["2031"] - df_sim["2026"]) * (1/5)
+df_sim["2028"] = df_sim["2026"] + (df_sim["2031"] - df_sim["2026"]) * (2/5)
+df_sim["2029"] = df_sim["2026"] + (df_sim["2031"] - df_sim["2026"]) * (3/5)
+df_sim["2030"] = df_sim["2026"] + (df_sim["2031"] - df_sim["2026"]) * (4/5)
 
 # ============================================================
 # AFFICHAGE DU DASHBOARD
 # ============================================================
-st.title("📈 Simulateur de Croissance Annuelle - Alcomix")
+st.title("📈 Simulateur de Croissance - Alcomix")
 
-# --- KPIs ---
-cagr_global = ((obj_2031 / TOTAL_2026) ** (1/5) - 1) * 100 if TOTAL_2026 > 0 else 0
-col1, col2, col3 = st.columns(3)
-col1.metric("Volume 2026", f"{TOTAL_2026:,.0f}")
-col2.metric("Volume 2031 (Cible)", f"{obj_2031:,.0f}")
-col3.metric("CAGR Global 26-31", f"{cagr_global:.2f} %")
+st.markdown("### 🎛️ Tableau de Bord des Objectifs (Modifiable)")
+st.info("💡 **Astuce :** Vous pouvez double-cliquer sur une cellule des années 2026 à 2031 pour ajuster manuellement l'objectif d'un segment. Les marques et articles se recalculeront automatiquement.")
+
+# --- TABLEAU MODIFIABLE PAR SEGMENT ---
+df_seg_initial = df_sim.groupby("Segment")[["2026", "2027", "2028", "2029", "2030", "2031"]].sum().reset_index()
+
+# Affichage avec st.data_editor (rend les cellules éditables)
+edited_seg_df = st.data_editor(
+    df_seg_initial,
+    column_config={
+        "Segment": st.column_config.TextColumn("Segment", disabled=True),
+        "2026": st.column_config.NumberColumn("2026", format="%d"),
+        "2027": st.column_config.NumberColumn("2027", format="%d"),
+        "2028": st.column_config.NumberColumn("2028", format="%d"),
+        "2029": st.column_config.NumberColumn("2029", format="%d"),
+        "2030": st.column_config.NumberColumn("2030", format="%d"),
+        "2031": st.column_config.NumberColumn("2031", format="%d"),
+    },
+    hide_index=True,
+    use_container_width=True,
+    key="editor_segments"
+)
+
+# Recalcul des sous-niveaux (Marques et Articles) en fonction des modifications du tableau Segment
+# 1. On calcule le nouveau total global par année à partir du tableau modifié
+nouveaux_totaux_an = edited_seg_df[["2026", "2027", "2028", "2029", "2030", "2031"]].sum()
+
+# 2. On recalcule les poids de chaque segment dans le nouveau total
+poids_seg_an = edited_seg_df.set_index("Segment").div(nouveaux_totaux_an, axis=1)
+
+# 3. On applique ces nouveaux poids aux articles pour la vue détaillée
+df_sim_ajuste = df_sim.copy()
+for annee in ["2026", "2027", "2028", "2029", "2030", "2031"]:
+    # Pour chaque segment, on applique le poids de l'article dans son segment initial
+    poids_art_dans_seg = df_sim.groupby("Segment")[annee].transform(lambda x: x / x.sum())
+    
+    # Le nouveau volume de l'article = Nouveau volume du segment * Poids de l'article dans le segment
+    nouveau_vol_seg = edited_seg_df.set_index("Segment")[annee]
+    df_sim_ajuste[annee] = df_sim["Segment"].map(nouveau_vol_seg) * poids_art_dans_seg
+
+
+# --- TABLEAU MENSUEL ---
+st.markdown("### 📅 Répartition Mensuelle (Mix)")
+annee_cible = st.selectbox("Sélectionnez l'année à projeter :", [2027, 2028, 2029, 2030, 2031], index=0)
+annee_str = str(annee_cible)
+
+# Calcul du mix et de la moyenne mensuelle basé sur les données modifiées
+mix_mensuel = edited_seg_df[["Segment", annee_str]].copy()
+mix_mensuel["Mix %"] = (mix_mensuel[annee_str] / mix_mensuel[annee_str].sum()) * 100
+mix_mensuel["Moyenne Mensuelle"] = mix_mensuel[annee_str] / 12
+
+st.dataframe(
+    mix_mensuel.set_index("Segment").style.format({
+        annee_str: "{:,.0f}",
+        "Mix %": "{:.1f} %",
+        "Moyenne Mensuelle": "{:,.0f}"
+    }),
+    use_container_width=True
+)
 
 st.divider()
 
-# --- TABLEAU 1 : DEMANDE PAR SEGMENT (ANNUEL) ---
-st.markdown("### 📊 Demande par Segment (Vue Annuelle)")
-df_seg = df_sim.groupby("Segment").sum(numeric_only=True).reset_index()
-
-# Ajout CAGR
-df_seg["CAGR 26-31"] = ((df_seg["2031"] / df_seg["2026"].replace(0, 1)) ** (1/5) - 1) * 100
-df_seg["CAGR 26-31"] = df_seg["CAGR 26-31"].apply(lambda x: f"{x:.1f} %" if pd.notnull(x) else "-")
-
-# Formatage
-cols_annees = [str(y) for y in range(2026, 2032)]
-df_seg_display = df_seg.set_index("Segment")[cols_annees + ["CAGR 26-31"]].copy()
-for col in cols_annees:
-    df_seg_display[col] = df_seg_display[col].apply(lambda x: f"{x:,.0f}".replace(",", " ") if pd.notnull(x) else "-")
-
-st.dataframe(df_seg_display, use_container_width=True)
-
-# --- TABLEAU 2 : OBJECTIFS MENSUELS ET MIX (Nouveau !) ---
-st.markdown("### 📅 Objectifs Mensuels et Mix (Par Segment)")
-
-annee_cible = st.selectbox("Sélectionnez l'année cible pour la vue mensuelle :", [2027, 2028, 2029, 2030, 2031], index=0)
-
-# Calcul du mix global par segment pour l'année choisie
-mix_seg_an = df_sim.groupby("Segment")[str(annee_cible)].sum().reset_index()
-mix_seg_an["Mix %"] = (mix_seg_an[str(annee_cible)] / mix_seg_an[str(annee_cible)].sum()) * 100
-mix_seg_an[str(annee_cible)] = mix_seg_an[str(annee_cible)].apply(lambda x: f"{x:,.0f}".replace(",", " "))
-mix_seg_an["Mix %"] = mix_seg_an["Mix %"].apply(lambda x: f"{x:.1f} %")
-
-# On calcule la répartition mensuelle linéaire (Total / 12)
-objectif_annuel = objectifs[annee_cible]
-objectif_mensuel_moyen = objectif_annuel / 12
-
-# Création du tableau
-df_mensuel = pd.DataFrame({
-    "Segment": mix_seg_an["Segment"],
-    "Objectif Annuel": mix_seg_an[str(annee_cible)],
-    "Mix %": mix_seg_an["Mix %"],
-    "Moyenne Mensuelle": (mix_seg_an[str(annee_cible)].str.replace(" ", "").astype(float) / 12).apply(lambda x: f"{x:,.0f}".replace(",", " "))
-})
-
-st.dataframe(df_mensuel.set_index("Segment"), use_container_width=True)
-st.caption(f"* Objectif mensuel moyen basé sur un total de {objectif_annuel:,.0f} unités pour {annee_cible}.*")
-
-# --- TABLEAU 3 : DÉTAIL PAR SEGMENT ET MARQUE ---
+# --- DÉTAIL PAR SEGMENT (Accordéons) ---
 st.markdown("### 📦 Détail par Segment et Marque")
-for segment in df_sim["Segment"].unique():
+for segment in df_sim_ajuste["Segment"].unique():
     with st.expander(f"🔹 Segment : {segment}"):
-        df_detail = df_sim[df_sim["Segment"] == segment].copy()
+        df_detail = df_sim_ajuste[df_sim_ajuste["Segment"] == segment]
         
-        # Vue Marque
-        df_marque = df_detail.groupby("Marque").sum(numeric_only=True).reset_index()
-        cols_affichage = ["Marque"] + cols_annees
-        df_marque_display = df_marque[cols_affichage].set_index("Marque")
+        # Affichage par marque
+        df_marque = df_detail.groupby("Marque")[["2026", "2027", "2028", "2029", "2030", "2031"]].sum()
+        st.markdown("**Par Marque**")
+        st.dataframe(
+            df_marque.style.format("{:,.0f}"),
+            use_container_width=True
+        )
         
-        for col in cols_annees:
-            df_marque_display[col] = df_marque_display[col].apply(lambda x: f"{x:,.0f}".replace(",", " ") if pd.notnull(x) else "-")
-            
-        st.markdown(f"**Marques**")
-        st.dataframe(df_marque_display, use_container_width=True)
+        # Affichage par article
+        df_article = df_detail.set_index(["Marque", "Article"])[["2026", "2027", "2028", "2029", "2030", "2031"]]
+        st.markdown("**Par Article (SKU)**")
+        st.dataframe(
+            df_article.style.format("{:,.0f}"),
+            use_container_width=True
+        )
