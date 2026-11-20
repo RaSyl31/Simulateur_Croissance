@@ -1,228 +1,201 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
-st.set_page_config(page_title="Simulateur Alcomix", layout="wide")
+# ======================================================
+# CONFIG
+# ======================================================
 
-# ============================================================
-# DONNÉES 2026
-# ============================================================
-DONNEES_2026 = {
-    "Alcomix": {
-        "Booster": {"Booster Appel-Mix 50CL VER": 21855, "Booster Tornado 50CL VER VER": 15616},
-        "BOTA Fresh": {"BOTA Fresh 50 cl VER": 1005},
-        "Racines": {"Racines 33 cl VER": 2220},
-    },
-    "BG": {
-        "Caprice": {
-            "Caprice Ananas 100 cl VER": 4386, "Caprice Ananas 150 cl PET": 22050, "Caprice Ananas 30 cl VER": 4496,
-            "Caprice Bonbon Anglais 100 cl VER": 57580, "Caprice Bonbon Anglais 150 cl PET": 308042,
-            "Caprice Bonbon Anglais 20L FUT": 79, "Caprice Bonbon Anglais 30 cl VER": 41261,
-            "Caprice Bonbon Anglais 33 cl CAN": 4990, "Caprice Bonbon Anglais 35 cl PET": 19424,
-            "Caprice Bonbon Anglais 50 cl PET": 137932, "Caprice Grenadine 100 cl VER": 11739,
-            "Caprice Grenadine 150 cl PET": 34088, "Caprice Grenadine 30 cl VER": 4720,
-            "Caprice Grenadine 33 cl CAN": 2897, "Caprice Grenadine 35 cl PET": 1886,
-            "Caprice Grenadine 50 cl PET": 11792, "Caprice Orange 100 cl VER": 33262,
-            "Caprice Orange 150 cl PET": 161382, "Caprice Orange 20L FUT": 75,
-            "Caprice Orange 30 cl VER": 26172, "Caprice Orange 33 cl CAN": 3875,
-            "Caprice Orange 35 cl PET": 5943, "Caprice Orange 50 cl PET": 59297,
-            "Caprice Pomme 100 cl VER": 958, "Caprice Pomme 150 cl PET": 4128,
-            "Caprice Pomme 30 cl VER": 1595, "Caprice Pomme 50 cl PET": 0,
-        },
-        "Tonic": {"Tonic 100 cl VER": 7958, "Tonic 30 cl VER": 17921},
-        "World Cola": {
-            "World Cola 100cl VER": 4368, "World Cola 100cl WOCO VER": 24276, "World Cola 150cl PET": 100927,
-            "World Cola 30cl VER": 1967, "World Cola 30cl WOCO VER": 26387, "World Cola 33 cl CAN": 2832,
-            "World Cola 35cl PET": 6866, "World Cola 50cl PET": 54263, "World Cola 20L FUT": 281,
-        },
-    },
-    "BIERES": {
-        "Beaufort": {"Beaufort 33 CL CAN": 13986, "Beaufort 33CL VER": 34851},
-        "FRESH": {"FRESH 33 cl CAN": 3254, "FRESH 33 cl EXPORT CAN": 25, "THB Fresh 33 cl VER": 1881, "THB Fresh 65 cl VER": 35712},
-        "Gold": {
-            "Gold 8 50 cl CAN": 1159, "Gold 8 50 cl VER": 8661, "Gold Blanche 33cl VER": 24605,
-            "Gold Blanche 50 cl CAN": 43538, "Gold Blanche 50 cl VER": 92121, "Gold Amigo 33cl VER": 1463,
-            "Gold Blonde 50 cl CAN": 8531, "Gold Blonde 50 cl VER": 15872, "Gold Blonde 65 cl VER": 58077,
-            "Gold Blanche 20L FUT": 1464,
-        },
-        "Queen": {"Queen s 65 cl VER": 153975},
-        "THB": {
-            "THB Pilsener 33 cl VER": 96836, "THB Pilsener 50 cl CAN": 60246, "THB Pilsener 65 cl VER": 1513573,
-            "THB Pilsener 20L FUT": 2228, "THB Pilsener 30L FUT": 0, "THB Speciale NOEL 33 cl VER": 736,
-            "THB Pilsener 20L Export FUT": 450, "THB Blanche 20L Export FUT": 47,
-            "THB Pilsener 30L Export FUT": 602, "THB 8 20L Export FUT": 40,
-        },
-    },
-    "EAUX": {
-        "Cristal": {"Cristal 100 cl VER": 1004, "Cristal 150 cl PET": 4516, "Cristal 30 cl VER": 689, "Cristal 50 cl VER": 4206},
-        "Cristalline": {"Cristalline 100 cl PET": 272844, "Cristalline 200 cl PET": 268234},
-        "Eau vive": {"Eau vive 150 cl PET": 210612, "Eau vive 50 cl PET": 67919, "Eau vive 50 cl VER": 364},
-    },
-    "Energy": {
-        "FOSA": {"FOSA 50 cl CAN": 3265},
-        "XXL": {"XXL 30cl BOB VER": 19433, "XXL 30cl VER": 571, "XXL 33 cl CAN": 3001, "XXL 35cl PET": 16357},
-    },
-}
+st.set_page_config(
+    page_title="Simulateur S&OP",
+    layout="wide"
+)
 
-PRODUITS_ARRETES = ["BOTA Fresh 50 cl VER", "Racines 33 cl VER"]
-ANNEES = ["2026", "2027", "2028", "2029", "2030", "2031"]
+st.title("📈 Simulateur S&OP THB")
 
-# ============================================================
-# PREPARATION DES DONNÉES
-# ============================================================
-@st.cache_data
-def preparer_donnees():
-    rows = []
-    for segment, marques in DONNEES_2026.items():
-        for marque, articles in marques.items():
-            for article, volume in articles.items():
-                rows.append({"Segment": segment, "Marque": marque, "Article": article, "2026": volume})
-    df = pd.DataFrame(rows)
-    
-    df["2026"] = df.apply(lambda row: 0 if row["Article"] in PRODUITS_ARRETES else row["2026"], axis=1)
-    
-    total_2026 = df["2026"].sum()
-    df["Poids_Segment"] = df.groupby("Segment")["2026"].transform("sum") / total_2026
-    df["Poids_Marque"] = df.groupby(["Segment", "Marque"])["2026"].transform("sum") / df.groupby("Segment")["2026"].transform("sum")
-    df["Poids_Article"] = df["2026"] / df.groupby(["Segment", "Marque"])["2026"].transform("sum")
-    
-    return df
+ANNEES = ["2027", "2028", "2029", "2030", "2031"]
 
-df_base = preparer_donnees()
+# ======================================================
+# DONNEES HISTORIQUES 2026
+# Remplacer par votre base complète
+# ======================================================
 
-# ============================================================
-# INITIALISATION DE L'ÉTAT (Sécurité pour les colonnes)
-# ============================================================
-if "objets_seg" not in st.session_state:
-    st.session_state.objets_seg = pd.DataFrame({
-        "Segment": ["Alcomix", "BG", "BIERES", "EAUX", "Energy"],
-        "2027": [45969, 1258992, 2250000, 850000, 44000],
-        "2028": [49000, 1303400, 2400000, 900000, 46000],
-        "2029": [52500, 1459500, 2600000, 950000, 48000],
-        "2030": [56000, 1562400, 2800000, 1000000, 50000],
-        "2031": [60000, 1680000, 3000000, 1100000, 52000],
+df_2026 = pd.DataFrame({
+    "Segment": [
+        "Alcomix",
+        "BG",
+        "BIERES",
+        "EAUX",
+        "Energy"
+    ],
+    "Volume_2026": [
+        37471,
+        1081747,
+        2071848,
+        825388,
+        42627
+    ]
+})
+
+TOTAL_2026 = df_2026["Volume_2026"].sum()
+
+# ======================================================
+# TABLEAU 1
+# OBJECTIFS GLOBAUX
+# ======================================================
+
+st.subheader("1️⃣ Objectifs globaux")
+
+if "obj" not in st.session_state:
+
+    st.session_state.obj = pd.DataFrame({
+        "Année": ANNEES,
+        "Volume": [
+            4600000,
+            4900000,
+            5250000,
+            5600000,
+            6000000
+        ]
     })
 
-# ============================================================
-# INTERFACE
-# ============================================================
-st.title("📈 Simulateur de Croissance - Alcomix")
-
-st.markdown("### 🎛️ 1. Définir les objectifs par Segment")
-edited_df = st.data_editor(
-    st.session_state.objets_seg,
-    column_config={
-        "Segment": st.column_config.TextColumn("Segment", disabled=True),
-        "2027": st.column_config.NumberColumn("2027", format="%d"),
-        "2028": st.column_config.NumberColumn("2028", format="%d"),
-        "2029": st.column_config.NumberColumn("2029", format="%d"),
-        "2030": st.column_config.NumberColumn("2030", format="%d"),
-        "2031": st.column_config.NumberColumn("2031", format="%d"),
-    },
+df_obj = st.data_editor(
+    st.session_state.obj,
     hide_index=True,
     use_container_width=True,
-    key="editeur_segments"
+    key="obj_editor"
 )
-st.session_state.objets_seg = edited_df
 
-# --- CORRECTION DU BUG : On force les colonnes en string ---
-edited_df.columns = [str(c) for c in edited_df.columns]
+st.session_state.obj = df_obj
 
-# ============================================================
-# CALCUL DES VOLUMES
-# ============================================================
-df_final = df_base.copy()
+# ======================================================
+# TABLEAU 2
+# MIX SEGMENTS
+# ======================================================
 
-for annee in ANNEES[1:]:
-    # On s'assure que la colonne existe bien (elle existe grâce à la conversion en str)
-    if annee in edited_df.columns:
-        dict_obj = edited_df.set_index("Segment")[annee].to_dict()
-        df_final[annee] = df_final["Segment"].map(dict_obj) * df_final["Poids_Marque"] * df_final["Poids_Article"]
+st.subheader("2️⃣ Mix Segment (%)")
 
-# --- AGRÉGATION ---
-df_art = df_final[["Segment", "Marque", "Article"] + ANNEES].copy()
-df_marq = df_final.groupby(["Segment", "Marque"])[ANNEES].sum().reset_index()
-df_seg = df_final.groupby("Segment")[ANNEES].sum().reset_index()
-df_total = df_final[ANNEES].sum().to_frame().T
-df_total.insert(0, "Segment", "TOTAL ANNEE")
-df_total.insert(1, "Marque", "")
-df_total.insert(2, "Article", "")
+if "mix" not in st.session_state:
 
-# ============================================================
-# FUSION POUR L'AFFICHAGE
-# ============================================================
-lignes_finales = []
-for seg in ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]:
-    row_seg = df_seg[df_seg["Segment"] == seg].iloc[0].to_dict()
-    row_seg["Marque"] = ""
-    row_seg["Article"] = ""
-    lignes_finales.append(row_seg)
-    
-    marques = df_marq[df_marq["Segment"] == seg]
-    for _, marq in marques.iterrows():
-        row_marq = marq.to_dict()
-        row_marq["Article"] = ""
-        lignes_finales.append(row_marq)
-        
-        articles = df_art[(df_art["Segment"] == seg) & (df_art["Marque"] == marq["Marque"])]
-        for _, art in articles.iterrows():
-            lignes_finales.append(art.to_dict())
+    st.session_state.mix = pd.DataFrame({
+        "Segment": [
+            "Alcomix",
+            "BG",
+            "BIERES",
+            "EAUX",
+            "Energy"
+        ],
+        "2027": [2, 25, 55, 15, 3],
+        "2028": [2, 25, 55, 15, 3],
+        "2029": [2, 25, 55, 15, 3],
+        "2030": [2, 25, 55, 15, 3],
+        "2031": [2, 25, 55, 15, 3],
+    })
 
-lignes_finales.append(df_total.iloc[0].to_dict())
-df_affichage = pd.DataFrame(lignes_finales)
+df_mix = st.data_editor(
+    st.session_state.mix,
+    hide_index=True,
+    use_container_width=True,
+    key="mix_editor"
+)
 
-# ============================================================
-# STYLISATION (EXCEL STYLE)
-# ============================================================
-def style_tableau(df):
-    styles = pd.DataFrame('', index=df.index, columns=df.columns)
-    RED_BG = "background-color: #b30000; color: white; font-weight: bold;"
-    LIGHT_RED_BG = "background-color: #f4cccc; color: black;"
-    GREY_BG = "background-color: #d9d9d9; font-weight: bold;"
-    WHITE_BG = "background-color: white;"
-    
-    for i, row in df.iterrows():
-        if row["Segment"] == "TOTAL ANNEE":
-            styles.loc[i, ["Segment", "Marque", "Article"]] = RED_BG
-            styles.loc[i, ANNEES] = RED_BG
-        elif row["Marque"] == "" and row["Article"] == "": 
-            styles.loc[i, ["Segment", "Marque", "Article"]] = LIGHT_RED_BG + " font-weight: bold;"
-            styles.loc[i, ANNEES] = LIGHT_RED_BG + " font-weight: bold;"
-        elif row["Article"] == "": 
-            styles.loc[i, ["Segment", "Marque", "Article"]] = GREY_BG
-            styles.loc[i, ANNEES] = GREY_BG
-        else: 
-            styles.loc[i, ["Segment", "Marque", "Article"]] = WHITE_BG
-            if row["Article"] in PRODUITS_ARRETES:
-                styles.loc[i, ANNEES] = "background-color: #d9ead3; color: black;" 
-                
-    return styles
+st.session_state.mix = df_mix
 
-format_dict = {annee: "{:,.0f}" for annee in ANNEES}
-styled_df = df_affichage.style.apply(style_tableau, axis=None).format(format_dict)
+# Contrôle des sommes
 
-# ============================================================
-# AFFICHAGE
-# ============================================================
-st.markdown("### 📊 2. Tableau de Bord Détaillé")
-st.dataframe(styled_df, use_container_width=True, height=800)
+for annee in ANNEES:
 
-st.markdown("---")
-st.markdown("### 📅 3. Répartition Mensuelle")
-annee_cible = st.selectbox("Sélectionnez l'année :", ANNEES[1:])
-df_mensuel = df_seg[["Segment", annee_cible]].copy()
-df_mensuel["Mix %"] = (df_mensuel[annee_cible] / df_mensuel[annee_cible].sum()) * 100
-df_mensuel["Moyenne Mensuelle"] = df_mensuel[annee_cible] / 12
+    total_mix = df_mix[annee].sum()
+
+    if round(total_mix, 2) == 100:
+        st.success(f"{annee} : 100 %")
+    else:
+        st.warning(
+            f"{annee} : {total_mix:.2f}% (doit être égal à 100%)"
+        )
+
+# ======================================================
+# TABLEAU 3
+# CALCUL VOLUMES SEGMENTS
+# ======================================================
+
+st.subheader("3️⃣ Volumes calculés")
+
+df_result = pd.DataFrame()
+
+df_result["Segment"] = df_mix["Segment"]
+
+df_result["2026"] = df_result["Segment"].map(
+    dict(
+        zip(
+            df_2026["Segment"],
+            df_2026["Volume_2026"]
+        )
+    )
+)
+
+for annee in ANNEES:
+
+    volume_total = (
+        df_obj
+        .loc[
+            df_obj["Année"] == annee,
+            "Volume"
+        ]
+        .iloc[0]
+    )
+
+    df_result[annee] = (
+        df_mix[annee] / 100
+    ) * volume_total
 
 st.dataframe(
-    df_mensuel.style.format({
-        annee_cible: "{:,.0f}",
-        "Mix %": "{:.1f} %",
-        "Moyenne Mensuelle": "{:,.0f}"
-    }),
-    hide_index=True,
+    df_result.style.format("{:,.0f}"),
     use_container_width=True
 )
+
+# ======================================================
+# EVOLUTION
+# ======================================================
+
+st.subheader("📊 Evolution par segment")
+
+df_graph = df_result.set_index("Segment")
+
+st.line_chart(
+    df_graph[ANNEES].T
+)
+
+# ======================================================
+# EXPORT EXCEL
+# ======================================================
+
+excel_file = "Simulation_SOP.xlsx"
+
+with pd.ExcelWriter(excel_file) as writer:
+
+    df_obj.to_excel(
+        writer,
+        sheet_name="Objectifs",
+        index=False
+    )
+
+    df_mix.to_excel(
+        writer,
+        sheet_name="Mix",
+        index=False
+    )
+
+    df_result.to_excel(
+        writer,
+        sheet_name="Volumes",
+        index=False
+    )
+
+with open(excel_file, "rb") as f:
+
+    st.download_button(
+        label="📥 Télécharger Excel",
+        data=f,
+        file_name="Simulation_SOP.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
