@@ -6,16 +6,37 @@ import pandas as pd
 # =====================================================
 
 st.set_page_config(
-    page_title="Simulateur S&OP THB",
+    page_title="Simulateur S&OP",
     layout="wide"
 )
 
-st.title("📈 Simulateur S&OP THB")
+st.title("📈 Simulateur S&OP")
 
 ANNEES = ["2027", "2028", "2029", "2030", "2031"]
 
 # =====================================================
-# TABLEAU 1 - OBJECTIFS GLOBAUX
+# DONNEES EXEMPLE 2026
+# =====================================================
+
+df_seg_2026 = pd.DataFrame({
+    "Segment": [
+        "Alcomix",
+        "BG",
+        "BIERES",
+        "EAUX",
+        "Energy"
+    ],
+    "2026": [
+        37471,
+        1081747,
+        2071848,
+        825388,
+        42627
+    ]
+})
+
+# =====================================================
+# TABLEAU 1 - OBJECTIFS
 # =====================================================
 
 st.subheader("1️⃣ Objectifs Globaux")
@@ -35,19 +56,9 @@ if "objectifs" not in st.session_state:
 
 df_obj = st.data_editor(
     st.session_state.objectifs,
-    column_config={
-        "Année": st.column_config.TextColumn(
-            "Année",
-            disabled=True
-        ),
-        "Volume": st.column_config.NumberColumn(
-            "Volume",
-            format="%d"
-        )
-    },
     hide_index=True,
     use_container_width=True,
-    key="editor_objectif"
+    key="objectifs_editor"
 )
 
 st.session_state.objectifs = df_obj
@@ -76,10 +87,6 @@ if "mix" not in st.session_state:
         "2031": [2, 25, 55, 15, 3, 100]
     })
 
-# --------------------------------------
-# Recalcul automatique du TOTAL
-# --------------------------------------
-
 df_mix_affichage = st.session_state.mix.copy()
 
 for annee in ANNEES:
@@ -93,10 +100,6 @@ for annee in ANNEES:
         df_mix_affichage["Segment"] == "TOTAL",
         annee
     ] = total
-
-# --------------------------------------
-# Tableau modifiable
-# --------------------------------------
 
 df_mix = st.data_editor(
     df_mix_affichage,
@@ -131,17 +134,14 @@ df_mix = st.data_editor(
         "2031": st.column_config.NumberColumn(
             "2031",
             format="%d %%"
-        ),
+        )
+
     },
 
     hide_index=True,
     use_container_width=True,
     key="mix_editor"
 )
-
-# --------------------------------------
-# Sauvegarde sans la ligne TOTAL
-# --------------------------------------
 
 for annee in ANNEES:
 
@@ -152,10 +152,6 @@ for annee in ANNEES:
         df_mix["Segment"] != "TOTAL",
         annee
     ].values
-
-# --------------------------------------
-# Recalcul TOTAL
-# --------------------------------------
 
 for annee in ANNEES:
 
@@ -168,96 +164,169 @@ for annee in ANNEES:
     ].sum()
 
 # =====================================================
-# TABLEAU 3 - RESULTATS
+# CALCUL SEGMENT
 # =====================================================
 
-st.subheader("3️⃣ Volumes Calculés")
-
-df_result = pd.DataFrame()
+df_segment = pd.DataFrame()
 
 segments = (
     st.session_state.mix
     .query("Segment != 'TOTAL'")
     ["Segment"]
-    .tolist()
 )
 
-df_result["Segment"] = segments
+df_segment["Segment"] = segments
+
+df_segment["2026"] = df_segment["Segment"].map(
+    df_seg_2026.set_index("Segment")["2026"]
+)
 
 for annee in ANNEES:
 
-    volume_total = (
-        df_obj.loc[
+    objectif = (
+        df_obj
+        .loc[
             df_obj["Année"] == annee,
             "Volume"
-        ].iloc[0]
+        ]
+        .iloc[0]
     )
 
-    mix_segment = (
+    mix = (
         st.session_state.mix
         .query("Segment != 'TOTAL'")
         [annee]
-        .values
     )
 
-    df_result[annee] = (
-        volume_total *
-        mix_segment / 100
-    )
+    df_segment[annee] = objectif * mix / 100
 
-# --------------------------------------
-# Ligne TOTAL
-# --------------------------------------
+ligne_total = {"Segment": "TOTAL"}
 
-ligne_total = {
-    "Segment": "TOTAL"
-}
+for col in ["2026"] + ANNEES:
+    ligne_total[col] = df_segment[col].sum()
 
-for annee in ANNEES:
-
-    ligne_total[annee] = df_result[annee].sum()
-
-df_result = pd.concat(
+df_segment = pd.concat(
     [
-        df_result,
+        df_segment,
         pd.DataFrame([ligne_total])
     ],
     ignore_index=True
 )
 
-# --------------------------------------
-# Affichage
-# --------------------------------------
+# =====================================================
+# DONNEES MARQUES (EXEMPLE)
+# =====================================================
 
-st.dataframe(
-    df_result.style.format({
-        "2027": "{:,.0f}",
-        "2028": "{:,.0f}",
-        "2029": "{:,.0f}",
-        "2030": "{:,.0f}",
-        "2031": "{:,.0f}"
-    }),
-    hide_index=True,
-    use_container_width=True
+df_marque = pd.DataFrame({
+    "Segment": [
+        "BG",
+        "BG",
+        "BIERES",
+        "BIERES",
+        "BIERES"
+    ],
+
+    "Marque": [
+        "Caprice",
+        "World Cola",
+        "THB",
+        "Gold",
+        "Queen's"
+    ],
+
+    "2026": [
+        600000,
+        481747,
+        1700000,
+        240000,
+        131848
+    ]
+})
+
+# =====================================================
+# DONNEES ARTICLES (EXEMPLE)
+# =====================================================
+
+df_article = pd.DataFrame({
+
+    "Segment": [
+        "BIERES",
+        "BIERES",
+        "BG"
+    ],
+
+    "Marque": [
+        "THB",
+        "THB",
+        "Caprice"
+    ],
+
+    "Article": [
+        "THB Pilsener 65 cl VER",
+        "THB Pilsener 33 cl VER",
+        "Caprice Orange 150 cl PET"
+    ],
+
+    "2026": [
+        1200000,
+        500000,
+        150000
+    ]
+})
+
+# =====================================================
+# ONGLETS
+# =====================================================
+
+tab1, tab2, tab3 = st.tabs(
+    [
+        "📊 Segment",
+        "🏷️ Marque",
+        "📦 Article"
+    ]
 )
 
 # =====================================================
-# GRAPHIQUE
+# ONGLET SEGMENT
 # =====================================================
 
-st.subheader("📊 Evolution par Segment")
+with tab1:
 
-graph_df = df_result.copy()
+    st.subheader("Volume par Segment")
 
-graph_df = graph_df[
-    graph_df["Segment"] != "TOTAL"
-]
+    st.dataframe(
+        df_segment.style.format("{:,.0f}"),
+        hide_index=True,
+        use_container_width=True
+    )
 
-graph_df = graph_df.set_index("Segment")
+# =====================================================
+# ONGLET MARQUE
+# =====================================================
 
-st.line_chart(
-    graph_df[ANNEES].T
-)
+with tab2:
+
+    st.subheader("Volume par Marque")
+
+    st.dataframe(
+        df_marque.style.format("{:,.0f}"),
+        hide_index=True,
+        use_container_width=True
+    )
+
+# =====================================================
+# ONGLET ARTICLE
+# =====================================================
+
+with tab3:
+
+    st.subheader("Volume par Article")
+
+    st.dataframe(
+        df_article.style.format("{:,.0f}"),
+        hide_index=True,
+        use_container_width=True
+    )
 
 # =====================================================
 # EXPORT EXCEL
@@ -275,13 +344,25 @@ with pd.ExcelWriter(
 
     st.session_state.mix.to_excel(
         writer,
-        sheet_name="Mix",
+        sheet_name="Mix Segment",
         index=False
     )
 
-    df_result.to_excel(
+    df_segment.to_excel(
         writer,
-        sheet_name="Volumes",
+        sheet_name="Segment",
+        index=False
+    )
+
+    df_marque.to_excel(
+        writer,
+        sheet_name="Marque",
+        index=False
+    )
+
+    df_article.to_excel(
+        writer,
+        sheet_name="Article",
         index=False
     )
 
