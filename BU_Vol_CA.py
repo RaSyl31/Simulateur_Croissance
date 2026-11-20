@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from openpyxl.styles import Alignment, Font, PatternFill
 
 # =====================================================
 # CONFIGURATION
@@ -44,8 +45,6 @@ st.session_state.objectifs = df_obj
 # =====================================================
 st.subheader("2️⃣ Mix Segment (%)")
 
-# Mix exacts issus de votre tableau de référence (image_59e874.png)
-# Ordre : Alcomix, BG, BIERES, EAUX, Energy
 if "mix" not in st.session_state:
     st.session_state.mix = pd.DataFrame({
         "Segment": ["Alcomix", "BG", "BIERES", "EAUX", "Energy", "TOTAL"],
@@ -113,7 +112,6 @@ else:
 
 # =====================================================
 # BASE DETAILLEE : VOLUMES 2026 & BASE DE POIDS 2027
-# Colonnes : [Segment, Marque, SKU, Vol_2026, Base_2027]
 # =====================================================
 detail = [
     # ALCOMIX
@@ -221,20 +219,15 @@ df_base = pd.DataFrame(
 # =====================================================
 # CALCUL DES POIDS 2027 (MARQUE DANS SEGMENT + SKU DANS MARQUE)
 # =====================================================
-# 1. Volume total de chaque Segment sur la base 2027
 df_base["Vol_Segment_2027"] = df_base.groupby("Segment")["Base_2027"].transform("sum")
-
-# 2. Volume total de chaque Marque (au sein de son Segment) sur la base 2027
 df_base["Vol_Marque_2027"] = df_base.groupby(["Segment", "Marque"])["Base_2027"].transform("sum")
 
-# 3. Poids de chaque Marque dans son Segment (base 2027) -> somme = 100% par segment
 df_base["Poids_Marque_2027"] = np.where(
     df_base["Vol_Segment_2027"] > 0,
     df_base["Vol_Marque_2027"] / df_base["Vol_Segment_2027"],
     0.0,
 )
 
-# 4. Poids de chaque SKU dans sa Marque (base 2027) -> somme = 100% par marque
 df_base["Poids_SKU_2027"] = np.where(
     df_base["Vol_Marque_2027"] > 0,
     df_base["Base_2027"] / df_base["Vol_Marque_2027"],
@@ -255,23 +248,19 @@ for annee in ANNEES:
         .to_dict()
     )
 
-    # Volume du Segment = Objectif Annuel * Mix Segment (%)
     volume_segment = {seg: (objectif * pct / 100.0) for seg, pct in mix_map.items()}
 
-    # Volume de la Marque = Volume Segment * Poids Marque dans Segment (2027)
     df_detail[f"MARQUE_{annee}"] = (
         df_detail["Segment"].map(volume_segment) * df_detail["Poids_Marque_2027"]
     )
-
-    # Volume du SKU = Volume Marque * Poids SKU dans Marque (2027)
     df_detail[annee] = df_detail[f"MARQUE_{annee}"] * df_detail["Poids_SKU_2027"]
 
 # =====================================================
-# FONCTION DE CONSTRUCTION DU TABLEAU HIERARCHIQUE
+# CONSTRUCTION DU TABLEAU AVEC COLONNES FUSIONNÉES
 # =====================================================
 ordre_segments = ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]
 
-def construire_tableau_hierarchique(segments_cibles):
+def construire_tableau_fusionne(segments_cibles):
     df_sub = df_detail[df_detail["Segment"].isin(segments_cibles)]
     lignes = []
 
@@ -282,9 +271,7 @@ def construire_tableau_hierarchique(segments_cibles):
     )
     ligne_total = {
         "Niveau": "TOTAL",
-        "Segment": label_total,
-        "Marque": "",
-        "SKU": "",
+        "Segment / Marque / SKU": label_total,
     }
     for annee in ANNEES_ALL:
         ligne_total[annee] = df_sub[annee].sum()
@@ -299,9 +286,7 @@ def construire_tableau_hierarchique(segments_cibles):
 
         ligne_segment = {
             "Niveau": "SEGMENT",
-            "Segment": segment,
-            "Marque": "",
-            "SKU": "",
+            "Segment / Marque / SKU": segment,
         }
         for annee in ANNEES_ALL:
             ligne_segment[annee] = seg_data[annee].sum()
@@ -312,9 +297,7 @@ def construire_tableau_hierarchique(segments_cibles):
 
             ligne_marque = {
                 "Niveau": "MARQUE",
-                "Segment": "",
-                "Marque": marque,
-                "SKU": "",
+                "Segment / Marque / SKU": f"    ▸ {marque}",
             }
             for annee in ANNEES_ALL:
                 ligne_marque[annee] = marq_data[annee].sum()
@@ -323,9 +306,7 @@ def construire_tableau_hierarchique(segments_cibles):
             for _, row in marq_data.iterrows():
                 ligne_sku = {
                     "Niveau": "SKU",
-                    "Segment": "",
-                    "Marque": "",
-                    "SKU": row["SKU"],
+                    "Segment / Marque / SKU": f"          {row['SKU']}",
                 }
                 for annee in ANNEES_ALL:
                     ligne_sku[annee] = row[annee]
@@ -371,7 +352,7 @@ with col_g2:
     st.plotly_chart(fig_line, use_container_width=True)
 
 # =====================================================
-# AFFICHAGE DU TABLEAU HIERARCHIQUE AVEC FILTRE SEGMENT
+# AFFICHAGE DU TABLEAU FUSIONNÉ AVEC FILTRE SEGMENT
 # =====================================================
 st.divider()
 st.subheader("3️⃣ Volumes Simulés Détaillés")
@@ -400,30 +381,59 @@ def format_cellule(val):
 if not segments_selectionnes:
     st.info("Veuillez sélectionner au moins un segment dans le filtre ci-dessus.")
 else:
-    df_affichage_filtre = construire_tableau_hierarchique(segments_selectionnes)
+    df_affichage_filtre = construire_tableau_fusionne(segments_selectionnes)
     st.dataframe(
         df_affichage_filtre.style.apply(style_hierarchie, axis=1).format(
             {annee: format_cellule for annee in ANNEES_ALL}
         ),
-        column_order=["Segment", "Marque", "SKU"] + ANNEES_ALL,
+        column_order=["Segment / Marque / SKU"] + ANNEES_ALL,
         hide_index=True,
         use_container_width=True,
         height=950,
     )
 
 # =====================================================
-# EXPORT EXCEL COMPLET (TOUS LES SEGMENTS)
+# EXPORT EXCEL AVEC FUSION RÉELLE DES CELLULES SEGMENT/MARQUE
 # =====================================================
 st.divider()
 
-df_export_complet = construire_tableau_hierarchique(ordre_segments).drop(columns=["Niveau"])
+df_export_raw = construire_tableau_fusionne(ordre_segments)
 
 buffer = io.BytesIO()
 with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
     df_obj.to_excel(writer, sheet_name="1_Objectifs", index=False)
     st.session_state.mix.to_excel(writer, sheet_name="2_Mix_Segment", index=False)
-    df_export_complet.to_excel(writer, sheet_name="3_Simulation_SKU", index=False)
 
+    # Feuille Simulation : on écrit les données sans la colonne technique "Niveau"
+    df_export_clean = df_export_raw.drop(columns=["Niveau"])
+    df_export_clean.to_excel(writer, sheet_name="3_Simulation_SKU", index=False)
+
+    ws = writer.sheets["3_Simulation_SKU"]
+
+    # Styles Excel fidèles au tableau
+    fill_total = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+    fill_seg = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
+    fill_marque = PatternFill(start_color="F8CBAD", end_color="F8CBAD", fill_type="solid")
+
+    font_bold = Font(bold=True, color="000000")
+    font_seg = Font(bold=True, color="FFFFFF")
+
+    for idx, niveau in enumerate(df_export_raw["Niveau"], start=2):
+        for col_idx in range(1, len(ANNEES_ALL) + 2):
+            cell = ws.cell(row=idx, column=col_idx)
+            if col_idx > 1:
+                cell.number_format = "#,##0"
+            if niveau == "TOTAL":
+                cell.fill = fill_total
+                cell.font = font_bold
+            elif niveau == "SEGMENT":
+                cell.fill = fill_seg
+                cell.font = font_seg
+            elif niveau == "MARQUE":
+                cell.fill = fill_marque
+                cell.font = font_bold
+
+    # Ajustement de largeur sur toutes les feuilles
     for sheetname in writer.sheets:
         worksheet = writer.sheets[sheetname]
         for col in worksheet.columns:
