@@ -15,29 +15,6 @@ ANNEES = ["2027", "2028", "2029", "2030", "2031"]
 ANNEES_ALL = ["2026"] + ANNEES
 
 # =====================================================
-# LISTE DES MARQUES ET SKU ARRÊTÉS APRÈS 2026
-# =====================================================
-MARQUES_ARRETEES = ["BOTA Fresh", "Racines"]
-
-SKUS_ARRETES = [
-    # BG - Caprice (gamme Pomme arrêtée)
-    "Caprice Pomme 100 cl VER",
-    "Caprice Pomme 150 cl PET",
-    "Caprice Pomme 30 cl VER",
-    "Caprice Pomme 50 cl PET",
-    # BIERES - FRESH
-    "FRESH 33 cl EXPORT CAN",
-    # BIERES - Gold
-    "Gold Amigo 33cl VER",
-    # BIERES - THB (Export & Noël arrêtés)
-    "THB Speciale NOEL 33 cl VER",
-    "THB Pilsener 20L Export FUT",
-    "THB Blanche 20L Export FUT",
-    "THB Pilsener 30L Export FUT",
-    "THB 8 20L Export FUT",
-]
-
-# =====================================================
 # TABLEAU 1 - OBJECTIFS GLOBAUX
 # =====================================================
 st.subheader("1️⃣ Objectifs Globaux (Volumes)")
@@ -126,134 +103,134 @@ else:
     )
 
 # =====================================================
-# BASE DETAILLEE 2026
+# BASE DETAILLEE : VOLUMES 2026 & BASE DE POIDS 2027
+# Colonnes : [Segment, Marque, SKU, Vol_2026, Base_2027]
 # =====================================================
 detail = [
     # ALCOMIX
-    ["Alcomix", "Booster", "Booster Appel-Mix 50CL VER", 21855],
-    ["Alcomix", "Booster", "Booster Tornado 50CL VER VER", 15616],
-    ["Alcomix", "BOTA Fresh", "BOTA Fresh 50 cl VER", 1005],
-    ["Alcomix", "Racines", "Racines 33 cl VER", 2220],
+    ["Alcomix", "Booster", "Booster Appel-Mix 50CL VER", 21855, 26734],
+    ["Alcomix", "Booster", "Booster Tornado 50CL VER VER", 15616, 19234],
+    ["Alcomix", "BOTA Fresh", "BOTA Fresh 50 cl VER", 1005, 0],
+    ["Alcomix", "Racines", "Racines 33 cl VER", 2220, 0],
     # BG - CAPRICE
-    ["BG", "Caprice", "Caprice Ananas 100 cl VER", 4386],
-    ["BG", "Caprice", "Caprice Ananas 150 cl PET", 22050],
-    ["BG", "Caprice", "Caprice Ananas 30 cl VER", 4496],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 100 cl VER", 57580],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 150 cl PET", 308042],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 20L FUT", 79],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 30 cl VER", 41261],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 33 cl CAN", 4990],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 35 cl PET", 19424],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 50 cl PET", 137932],
-    ["BG", "Caprice", "Caprice Grenadine 100 cl VER", 11739],
-    ["BG", "Caprice", "Caprice Grenadine 150 cl PET", 34088],
-    ["BG", "Caprice", "Caprice Grenadine 30 cl VER", 4720],
-    ["BG", "Caprice", "Caprice Grenadine 33 cl CAN", 2897],
-    ["BG", "Caprice", "Caprice Grenadine 35 cl PET", 1886],
-    ["BG", "Caprice", "Caprice Grenadine 50 cl PET", 11792],
-    ["BG", "Caprice", "Caprice Orange 100 cl VER", 33262],
-    ["BG", "Caprice", "Caprice Orange 150 cl PET", 161382],
-    ["BG", "Caprice", "Caprice Orange 20L FUT", 75],
-    ["BG", "Caprice", "Caprice Orange 30 cl VER", 26172],
-    ["BG", "Caprice", "Caprice Orange 33 cl CAN", 3875],
-    ["BG", "Caprice", "Caprice Orange 35 cl PET", 5943],
-    ["BG", "Caprice", "Caprice Orange 50 cl PET", 59297],
-    ["BG", "Caprice", "Caprice Pomme 100 cl VER", 958],
-    ["BG", "Caprice", "Caprice Pomme 150 cl PET", 4128],
-    ["BG", "Caprice", "Caprice Pomme 30 cl VER", 1595],
-    ["BG", "Caprice", "Caprice Pomme 50 cl PET", 0],
+    ["BG", "Caprice", "Caprice Ananas 100 cl VER", 4386, 4614],
+    ["BG", "Caprice", "Caprice Ananas 150 cl PET", 22050, 22156],
+    ["BG", "Caprice", "Caprice Ananas 30 cl VER", 4496, 4677],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 100 cl VER", 57580, 57543],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 150 cl PET", 308042, 311325],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 20L FUT", 79, 76],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 30 cl VER", 41261, 41451],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 33 cl CAN", 4990, 5872],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 35 cl PET", 19424, 20125],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 50 cl PET", 137932, 143586],
+    ["BG", "Caprice", "Caprice Grenadine 100 cl VER", 11739, 13276],
+    ["BG", "Caprice", "Caprice Grenadine 150 cl PET", 34088, 35314],
+    ["BG", "Caprice", "Caprice Grenadine 30 cl VER", 4720, 4988],
+    ["BG", "Caprice", "Caprice Grenadine 33 cl CAN", 2897, 3445],
+    ["BG", "Caprice", "Caprice Grenadine 35 cl PET", 1886, 3514],
+    ["BG", "Caprice", "Caprice Grenadine 50 cl PET", 11792, 13307],
+    ["BG", "Caprice", "Caprice Orange 100 cl VER", 33262, 34726],
+    ["BG", "Caprice", "Caprice Orange 150 cl PET", 161382, 172106],
+    ["BG", "Caprice", "Caprice Orange 20L FUT", 75, 76],
+    ["BG", "Caprice", "Caprice Orange 30 cl VER", 26172, 26934],
+    ["BG", "Caprice", "Caprice Orange 33 cl CAN", 3875, 4631],
+    ["BG", "Caprice", "Caprice Orange 35 cl PET", 5943, 5583],
+    ["BG", "Caprice", "Caprice Orange 50 cl PET", 59297, 61398],
+    ["BG", "Caprice", "Caprice Pomme 100 cl VER", 958, 0],
+    ["BG", "Caprice", "Caprice Pomme 150 cl PET", 4128, 0],
+    ["BG", "Caprice", "Caprice Pomme 30 cl VER", 1595, 0],
+    ["BG", "Caprice", "Caprice Pomme 50 cl PET", 0, 0],
     # BG - TONIC
-    ["BG", "Tonic", "Tonic 100 cl VER", 7958],
-    ["BG", "Tonic", "Tonic 30 cl VER", 17921],
+    ["BG", "Tonic", "Tonic 100 cl VER", 7958, 8472],
+    ["BG", "Tonic", "Tonic 30 cl VER", 17921, 19010],
     # BG - WORLD COLA
-    ["BG", "World Cola", "World Cola 100cl VER", 4368],
-    ["BG", "World Cola", "World Cola 100cl WOCO VER", 24276],
-    ["BG", "World Cola", "World Cola 150cl PET", 100927],
-    ["BG", "World Cola", "World Cola 30cl VER", 1967],
-    ["BG", "World Cola", "World Cola 30cl WOCO VER", 26387],
-    ["BG", "World Cola", "World Cola 33 cl CAN", 2832],
-    ["BG", "World Cola", "World Cola 35cl PET", 6866],
-    ["BG", "World Cola", "World Cola 50cl PET", 54263],
-    ["BG", "World Cola", "World Cola 20L FUT", 281],
+    ["BG", "World Cola", "World Cola 100cl VER", 4368, 4251],
+    ["BG", "World Cola", "World Cola 100cl WOCO VER", 24276, 21268],
+    ["BG", "World Cola", "World Cola 150cl PET", 100927, 101951],
+    ["BG", "World Cola", "World Cola 30cl VER", 1967, 2232],
+    ["BG", "World Cola", "World Cola 30cl WOCO VER", 26387, 27030],
+    ["BG", "World Cola", "World Cola 33 cl CAN", 2832, 3192],
+    ["BG", "World Cola", "World Cola 35cl PET", 6866, 8700],
+    ["BG", "World Cola", "World Cola 50cl PET", 54263, 57596],
+    ["BG", "World Cola", "World Cola 20L FUT", 281, 272],
     # BIERES - BEAUFORT
-    ["BIERES", "Beaufort", "Beaufort 33 CL CAN", 13986],
-    ["BIERES", "Beaufort", "Beaufort 33CL VER", 34851],
+    ["BIERES", "Beaufort", "Beaufort 33 CL CAN", 13986, 14650],
+    ["BIERES", "Beaufort", "Beaufort 33CL VER", 34851, 36111],
     # BIERES - FRESH
-    ["BIERES", "FRESH", "FRESH 33 cl CAN", 3254],
-    ["BIERES", "FRESH", "FRESH 33 cl EXPORT CAN", 25],
-    ["BIERES", "FRESH", "THB Fresh 33 cl VER", 1881],
-    ["BIERES", "FRESH", "THB Fresh 65 cl VER", 35712],
+    ["BIERES", "FRESH", "FRESH 33 cl CAN", 3254, 3771],
+    ["BIERES", "FRESH", "FRESH 33 cl EXPORT CAN", 25, 0],
+    ["BIERES", "FRESH", "THB Fresh 33 cl VER", 1881, 2058],
+    ["BIERES", "FRESH", "THB Fresh 65 cl VER", 35712, 38200],
     # BIERES - GOLD
-    ["BIERES", "Gold", "Gold 8 50 cl CAN", 1159],
-    ["BIERES", "Gold", "Gold 8 50 cl VER", 8661],
-    ["BIERES", "Gold", "Gold Blanche 33cl VER", 24605],
-    ["BIERES", "Gold", "Gold Blanche 50 cl CAN", 43538],
-    ["BIERES", "Gold", "Gold Blanche 50 cl VER", 92121],
-    ["BIERES", "Gold", "Gold Amigo 33cl VER", 1463],
-    ["BIERES", "Gold", "Gold Blonde 50 cl CAN", 8531],
-    ["BIERES", "Gold", "Gold Blonde 50 cl VER", 15872],
-    ["BIERES", "Gold", "Gold Blonde 65 cl VER", 58077],
-    ["BIERES", "Gold", "Gold Blanche 20L FUT", 1464],
+    ["BIERES", "Gold", "Gold 8 50 cl CAN", 1159, 1242],
+    ["BIERES", "Gold", "Gold 8 50 cl VER", 8661, 9342],
+    ["BIERES", "Gold", "Gold Blanche 33cl VER", 24605, 26491],
+    ["BIERES", "Gold", "Gold Blanche 50 cl CAN", 43538, 46234],
+    ["BIERES", "Gold", "Gold Blanche 50 cl VER", 92121, 101300],
+    ["BIERES", "Gold", "Gold Amigo 33cl VER", 1463, 0],
+    ["BIERES", "Gold", "Gold Blonde 50 cl CAN", 8531, 9400],
+    ["BIERES", "Gold", "Gold Blonde 50 cl VER", 15872, 17086],
+    ["BIERES", "Gold", "Gold Blonde 65 cl VER", 58077, 60603],
+    ["BIERES", "Gold", "Gold Blanche 20L FUT", 1464, 1297],
     # BIERES - QUEEN
-    ["BIERES", "Queen", "Queen s 65 cl VER", 153975],
+    ["BIERES", "Queen", "Queen s 65 cl VER", 153975, 163506],
     # BIERES - THB
-    ["BIERES", "THB", "THB Pilsener 33 cl VER", 96836],
-    ["BIERES", "THB", "THB Pilsener 50 cl CAN", 60246],
-    ["BIERES", "THB", "THB Pilsener 65 cl VER", 1513573],
-    ["BIERES", "THB", "THB Pilsener 20L FUT", 2228],
-    ["BIERES", "THB", "THB Pilsener 30L FUT", 0],
-    ["BIERES", "THB", "THB Speciale NOEL 33 cl VER", 736],
-    ["BIERES", "THB", "THB Pilsener 20L Export FUT", 450],
-    ["BIERES", "THB", "THB Blanche 20L Export FUT", 47],
-    ["BIERES", "THB", "THB Pilsener 30L Export FUT", 602],
-    ["BIERES", "THB", "THB 8 20L Export FUT", 40],
+    ["BIERES", "THB", "THB Pilsener 33 cl VER", 96836, 102020],
+    ["BIERES", "THB", "THB Pilsener 50 cl CAN", 60246, 63912],
+    ["BIERES", "THB", "THB Pilsener 65 cl VER", 1513573, 1668977],
+    ["BIERES", "THB", "THB Pilsener 20L FUT", 2228, 2129],
+    ["BIERES", "THB", "THB Pilsener 30L FUT", 0, 652],
+    ["BIERES", "THB", "THB Speciale NOEL 33 cl VER", 736, 0],
+    ["BIERES", "THB", "THB Pilsener 20L Export FUT", 450, 0],
+    ["BIERES", "THB", "THB Blanche 20L Export FUT", 47, 0],
+    ["BIERES", "THB", "THB Pilsener 30L Export FUT", 602, 0],
+    ["BIERES", "THB", "THB 8 20L Export FUT", 40, 0],
     # EAUX - CRISTAL
-    ["EAUX", "Cristal", "Cristal 100 cl VER", 1004],
-    ["EAUX", "Cristal", "Cristal 150 cl PET", 4516],
-    ["EAUX", "Cristal", "Cristal 30 cl VER", 689],
-    ["EAUX", "Cristal", "Cristal 50 cl VER", 4206],
+    ["EAUX", "Cristal", "Cristal 100 cl VER", 1004, 1113],
+    ["EAUX", "Cristal", "Cristal 150 cl PET", 4516, 4684],
+    ["EAUX", "Cristal", "Cristal 30 cl VER", 689, 743],
+    ["EAUX", "Cristal", "Cristal 50 cl VER", 4206, 4480],
     # EAUX - CRISTALLINE
-    ["EAUX", "Cristalline", "Cristalline 100 cl PET", 272844],
-    ["EAUX", "Cristalline", "Cristalline 200 cl PET", 268234],
+    ["EAUX", "Cristalline", "Cristalline 100 cl PET", 272844, 292992],
+    ["EAUX", "Cristalline", "Cristalline 200 cl PET", 268234, 287015],
     # EAUX - EAU VIVE
-    ["EAUX", "Eau vive", "Eau vive 150 cl PET", 210612],
-    ["EAUX", "Eau vive", "Eau vive 50 cl PET", 67919],
-    ["EAUX", "Eau vive", "Eau vive 50 cl VER", 364],
+    ["EAUX", "Eau vive", "Eau vive 150 cl PET", 210612, 192457],
+    ["EAUX", "Eau vive", "Eau vive 50 cl PET", 67919, 71266],
+    ["EAUX", "Eau vive", "Eau vive 50 cl VER", 364, 2296],
     # ENERGY
-    ["Energy", "FOSA", "FOSA 50 cl CAN", 3265],
-    ["Energy", "XXL", "XXL 30cl BOB VER", 19433],
-    ["Energy", "XXL", "XXL 30cl VER", 571],
-    ["Energy", "XXL", "XXL 33 cl CAN", 3001],
-    ["Energy", "XXL", "XXL 35cl PET", 16357],
+    ["Energy", "FOSA", "FOSA 50 cl CAN", 3265, 15000],
+    ["Energy", "XXL", "XXL 30cl BOB VER", 19433, 21868],
+    ["Energy", "XXL", "XXL 30cl VER", 571, 794],
+    ["Energy", "XXL", "XXL 33 cl CAN", 3001, 4275],
+    ["Energy", "XXL", "XXL 35cl PET", 16357, 29070],
 ]
 
-df_base = pd.DataFrame(detail, columns=["Segment", "Marque", "SKU", "2026"])
-
-# =====================================================
-# CALCUL DES POIDS 2026 (AVEC GESTION DES ARRÊTS)
-# =====================================================
-est_arrete = df_base["Marque"].isin(MARQUES_ARRETEES) | df_base["SKU"].isin(SKUS_ARRETES)
-df_base["Base_Active"] = np.where(est_arrete, 0, df_base["2026"])
-
-# 1. Poids de la Marque dans le Segment (basé sur les volumes actifs)
-df_base["Vol_Segment_Actif"] = df_base.groupby("Segment")["Base_Active"].transform("sum")
-df_base["Vol_Marque_Actif"] = df_base.groupby(["Segment", "Marque"])["Base_Active"].transform("sum")
-
-df_base["Poids_Marque"] = np.where(
-    df_base["Vol_Segment_Actif"] > 0,
-    df_base["Vol_Marque_Actif"] / df_base["Vol_Segment_Actif"],
-    0,
-)
-
-# 2. Poids du SKU dans sa Marque (basé sur les SKU actifs de la marque)
-df_base["Poids_SKU"] = np.where(
-    df_base["Vol_Marque_Actif"] > 0,
-    df_base["Base_Active"] / df_base["Vol_Marque_Actif"],
-    0,
+df_base = pd.DataFrame(
+    detail, columns=["Segment", "Marque", "SKU", "2026", "Base_2027"]
 )
 
 # =====================================================
-# CALCUL DES VOLUMES FUTURS (2027 - 2031)
+# CALCUL DES POIDS 2027 (UTILISÉS POUR 2027 À 2031)
+# =====================================================
+# 2026 reste strictement inchangé (colonne "2026")
+# Les poids de projection sont calculés sur "Base_2027"
+df_base["Vol_Segment_2027"] = df_base.groupby("Segment")["Base_2027"].transform("sum")
+df_base["Vol_Marque_2027"] = df_base.groupby(["Segment", "Marque"])["Base_2027"].transform("sum")
+
+df_base["Poids_Marque_2027"] = np.where(
+    df_base["Vol_Segment_2027"] > 0,
+    df_base["Vol_Marque_2027"] / df_base["Vol_Segment_2027"],
+    0,
+)
+
+df_base["Poids_SKU_2027"] = np.where(
+    df_base["Vol_Marque_2027"] > 0,
+    df_base["Base_2027"] / df_base["Vol_Marque_2027"],
+    0,
+)
+
+# =====================================================
+# CALCUL DES VOLUMES (2027 - 2031) AVEC POIDS 2027
 # =====================================================
 df_detail = df_base.copy()
 
@@ -269,9 +246,9 @@ for annee in ANNEES:
     volume_segment = {seg: (objectif * pct / 100.0) for seg, pct in mix_map.items()}
 
     df_detail[f"MARQUE_{annee}"] = (
-        df_detail["Segment"].map(volume_segment) * df_detail["Poids_Marque"]
+        df_detail["Segment"].map(volume_segment) * df_detail["Poids_Marque_2027"]
     )
-    df_detail[annee] = df_detail[f"MARQUE_{annee}"] * df_detail["Poids_SKU"]
+    df_detail[annee] = df_detail[f"MARQUE_{annee}"] * df_detail["Poids_SKU_2027"]
 
 # =====================================================
 # FONCTION DE CONSTRUCTION DU TABLEAU HIERARCHIQUE
