@@ -14,8 +14,29 @@ st.title("📈 Simulateur S&OP — Prévisions 2026–2031")
 ANNEES = ["2027", "2028", "2029", "2030", "2031"]
 ANNEES_ALL = ["2026"] + ANNEES
 
-# Liste des marques arrêtées après 2026 (volume = 0 de 2027 à 2031)
+# =====================================================
+# LISTE DES MARQUES ET SKU ARRÊTÉS APRÈS 2026
+# (Relevés exactement depuis votre tableau de référence)
+# =====================================================
 MARQUES_ARRETEES = ["BOTA Fresh", "Racines"]
+
+SKUS_ARRETES = [
+    # BG - Caprice (gamme Pomme arrêtée)
+    "Caprice Pomme 100 cl VER",
+    "Caprice Pomme 150 cl PET",
+    "Caprice Pomme 30 cl VER",
+    "Caprice Pomme 50 cl PET",
+    # BIERES - FRESH
+    "FRESH 33 cl EXPORT CAN",
+    # BIERES - Gold
+    "Gold Amigo 33cl VER",
+    # BIERES - THB (Export & Noël arrêtés)
+    "THB Speciale NOEL 33 cl VER",
+    "THB Pilsener 20L Export FUT",
+    "THB Blanche 20L Export FUT",
+    "THB Pilsener 30L Export FUT",
+    "THB 8 20L Export FUT",
+]
 
 # =====================================================
 # TABLEAU 1 - OBJECTIFS GLOBAUX
@@ -50,11 +71,11 @@ st.subheader("2️⃣ Mix Segment (%)")
 if "mix" not in st.session_state:
     st.session_state.mix = pd.DataFrame({
         "Segment": ["Alcomix", "BG", "BIERES", "EAUX", "Energy", "TOTAL"],
-        "2027": [2.0, 25.0, 55.0, 15.0, 3.0, 100.0],
-        "2028": [2.0, 25.0, 55.0, 15.0, 3.0, 100.0],
-        "2029": [2.0, 25.0, 55.0, 15.0, 3.0, 100.0],
-        "2030": [2.0, 25.0, 55.0, 15.0, 3.0, 100.0],
-        "2031": [2.0, 25.0, 55.0, 15.0, 3.0, 100.0],
+        "2027": [1.0, 27.2, 49.3, 18.6, 3.9, 100.0],
+        "2028": [1.0, 26.6, 51.5, 19.2, 1.7, 100.0],
+        "2029": [1.0, 27.8, 51.5, 18.0, 1.7, 100.0],
+        "2030": [1.0, 26.8, 51.5, 17.8, 2.9, 100.0],
+        "2031": [1.0, 28.0, 51.5, 17.5, 2.0, 100.0],
     })
 
 for annee in ANNEES:
@@ -69,7 +90,7 @@ col_config_mix = {
 }
 for annee in ANNEES:
     col_config_mix[annee] = st.column_config.NumberColumn(
-        annee, format="%.1f %%", min_value=0.0, max_value=100.0, step=0.5
+        annee, format="%.2f %%", min_value=0.0, max_value=100.0, step=0.1
     )
 
 df_mix = st.data_editor(
@@ -93,12 +114,12 @@ for annee in ANNEES:
     ] = total_annee
 
     if not np.isclose(total_annee, 100.0, atol=0.01):
-        erreurs_mix.append(f"**{annee}** ({total_annee:.1f} %)")
+        erreurs_mix.append(f"**{annee}** ({total_annee:.2f} %)")
 
 if erreurs_mix:
     st.error(
         f"⚠️ **Attention : Le total du Mix Segment doit être égal à 100 %.** "
-        f"Années en erreur : {', '.join(erreurs_mix)}. Les volumes simulés seront faussés tant que le total n'est pas à 100 %."
+        f"Années en erreur : {', '.join(erreurs_mix)}."
     )
 else:
     st.success(
@@ -210,32 +231,31 @@ detail = [
 df_base = pd.DataFrame(detail, columns=["Segment", "Marque", "SKU", "2026"])
 
 # =====================================================
-# CALCUL DES POIDS 2026
+# CALCUL DES POIDS 2026 (AVEC GESTION DES ARRÊTS)
 # =====================================================
-# 1. Poids de chaque article (SKU) dans sa marque basé sur les volumes réels 2026
-df_base["Vol_Marque_2026"] = df_base.groupby(["Segment", "Marque"])["2026"].transform("sum")
-df_base["Poids_SKU"] = np.where(
-    df_base["Vol_Marque_2026"] > 0,
-    df_base["2026"] / df_base["Vol_Marque_2026"],
-    0,
-)
+# Base active : 0 pour toute marque arrêtée OU tout SKU arrêté
+est_arrete = df_base["Marque"].isin(MARQUES_ARRETEES) | df_base["SKU"].isin(SKUS_ARRETES)
+df_base["Base_Active"] = np.where(est_arrete, 0, df_base["2026"])
 
-# 2. Poids des marques actives dans le segment à partir de 2027
-# (Les marques arrêtées passent à 0, reportant leur poids sur les marques restantes)
-df_base["Base_Proj_Marque"] = np.where(
-    df_base["Marque"].isin(MARQUES_ARRETEES), 0, df_base["2026"]
-)
-df_base["Vol_Segment_Proj"] = df_base.groupby("Segment")["Base_Proj_Marque"].transform("sum")
-df_base["Vol_Marque_Proj"] = df_base.groupby(["Segment", "Marque"])["Base_Proj_Marque"].transform("sum")
+# 1. Poids de la Marque dans le Segment (basé sur les volumes actifs)
+df_base["Vol_Segment_Actif"] = df_base.groupby("Segment")["Base_Active"].transform("sum")
+df_base["Vol_Marque_Actif"] = df_base.groupby(["Segment", "Marque"])["Base_Active"].transform("sum")
 
 df_base["Poids_Marque"] = np.where(
-    df_base["Vol_Segment_Proj"] > 0,
-    df_base["Vol_Marque_Proj"] / df_base["Vol_Segment_Proj"],
+    df_base["Vol_Segment_Actif"] > 0,
+    df_base["Vol_Marque_Actif"] / df_base["Vol_Segment_Actif"],
+    0,
+)
+
+# 2. Poids du SKU dans sa Marque (basé sur les SKU actifs de la marque)
+df_base["Poids_SKU"] = np.where(
+    df_base["Vol_Marque_Actif"] > 0,
+    df_base["Base_Active"] / df_base["Vol_Marque_Actif"],
     0,
 )
 
 # =====================================================
-# CALCUL DES VOLUMES FUTURS
+# CALCUL DES VOLUMES FUTURS (2027 - 2031)
 # =====================================================
 df_detail = df_base.copy()
 
@@ -250,11 +270,9 @@ for annee in ANNEES:
 
     volume_segment = {seg: (objectif * pct / 100.0) for seg, pct in mix_map.items()}
 
-    # Volume Marque = Volume Segment * Poids_Marque (0 pour marques arrêtées)
     df_detail[f"MARQUE_{annee}"] = (
         df_detail["Segment"].map(volume_segment) * df_detail["Poids_Marque"]
     )
-    # Volume SKU = Volume Marque * Poids_SKU 2026
     df_detail[annee] = df_detail[f"MARQUE_{annee}"] * df_detail["Poids_SKU"]
 
 # =====================================================
@@ -374,27 +392,34 @@ segments_selectionnes = st.multiselect(
     placeholder="Choisissez un ou plusieurs segments...",
 )
 
+# Style fidèle à votre capture d'écran (Total beige, Segment rouge, Marque saumon)
 def style_hierarchie(row):
     if row["Niveau"] == "TOTAL":
-        return ["background-color: #1f4e78; color: white; font-weight: bold"] * len(row)
+        return ["background-color: #FFF2CC; color: black; font-weight: bold"] * len(row)
     elif row["Niveau"] == "SEGMENT":
-        return ["background-color: #d9e1f2; font-weight: bold"] * len(row)
+        return ["background-color: #C00000; color: white; font-weight: bold"] * len(row)
     elif row["Niveau"] == "MARQUE":
-        return ["background-color: #f2f2f2; font-weight: bold"] * len(row)
+        return ["background-color: #F8CBAD; color: black; font-weight: bold"] * len(row)
     return [""] * len(row)
 
+# Affiche vide si 0 en projection (pour 2027-2031) comme dans votre image
+def format_cellule(val):
+    if pd.isna(val) or val == 0:
+        return "-"
+    return f"{val:,.0f}".replace(",", " ")
+
 if not segments_selectionnes:
-    st.info("Veuillez sélectionner au moins un segment dans le filtre ci-dessus pour afficher le tableau.")
+    st.info("Veuillez sélectionner au moins un segment dans le filtre ci-dessus.")
 else:
     df_affichage_filtre = construire_tableau_hierarchique(segments_selectionnes)
     st.dataframe(
         df_affichage_filtre.style.apply(style_hierarchie, axis=1).format(
-            {annee: "{:,.0f}" for annee in ANNEES_ALL}
+            {annee: format_cellule for annee in ANNEES_ALL}
         ),
         column_order=["Segment", "Marque", "SKU"] + ANNEES_ALL,
         hide_index=True,
         use_container_width=True,
-        height=900,
+        height=950,
     )
 
 # =====================================================
