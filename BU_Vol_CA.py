@@ -6,7 +6,7 @@ import pandas as pd
 # =====================================================
 
 st.set_page_config(
-    page_title="Simulateur S&OP",
+    page_title="Simulateur S&OP THB",
     layout="wide"
 )
 
@@ -20,9 +20,9 @@ ANNEES = ["2027", "2028", "2029", "2030", "2031"]
 
 st.subheader("1️⃣ Objectifs Globaux")
 
-if "obj" not in st.session_state:
+if "objectifs" not in st.session_state:
 
-    st.session_state.obj = pd.DataFrame({
+    st.session_state.objectifs = pd.DataFrame({
         "Année": ANNEES,
         "Volume": [
             4600000,
@@ -34,7 +34,7 @@ if "obj" not in st.session_state:
     })
 
 df_obj = st.data_editor(
-    st.session_state.obj,
+    st.session_state.objectifs,
     column_config={
         "Année": st.column_config.TextColumn(
             "Année",
@@ -46,13 +46,14 @@ df_obj = st.data_editor(
         )
     },
     hide_index=True,
-    use_container_width=True
+    use_container_width=True,
+    key="editor_objectif"
 )
 
-st.session_state.obj = df_obj
+st.session_state.objectifs = df_obj
 
 # =====================================================
-# TABLEAU 2 - MIX SEGMENTS
+# TABLEAU 2 - MIX SEGMENT
 # =====================================================
 
 st.subheader("2️⃣ Mix Segment (%)")
@@ -65,17 +66,40 @@ if "mix" not in st.session_state:
             "BG",
             "BIERES",
             "EAUX",
-            "Energy"
+            "Energy",
+            "TOTAL"
         ],
-        "2027": [2, 25, 55, 15, 3],
-        "2028": [2, 25, 55, 15, 3],
-        "2029": [2, 25, 55, 15, 3],
-        "2030": [2, 25, 55, 15, 3],
-        "2031": [2, 25, 55, 15, 3],
+        "2027": [2, 25, 55, 15, 3, 100],
+        "2028": [2, 25, 55, 15, 3, 100],
+        "2029": [2, 25, 55, 15, 3, 100],
+        "2030": [2, 25, 55, 15, 3, 100],
+        "2031": [2, 25, 55, 15, 3, 100]
     })
 
+# --------------------------------------
+# Recalcul automatique du TOTAL
+# --------------------------------------
+
+df_mix_affichage = st.session_state.mix.copy()
+
+for annee in ANNEES:
+
+    total = df_mix_affichage.loc[
+        df_mix_affichage["Segment"] != "TOTAL",
+        annee
+    ].sum()
+
+    df_mix_affichage.loc[
+        df_mix_affichage["Segment"] == "TOTAL",
+        annee
+    ] = total
+
+# --------------------------------------
+# Tableau modifiable
+# --------------------------------------
+
 df_mix = st.data_editor(
-    st.session_state.mix,
+    df_mix_affichage,
 
     column_config={
 
@@ -115,52 +139,95 @@ df_mix = st.data_editor(
     key="mix_editor"
 )
 
-st.session_state.mix = df_mix
-
-# =====================================================
-# CONTROLE 100%
-# =====================================================
-
-st.markdown("### ✅ Contrôle des Mix")
+# --------------------------------------
+# Sauvegarde sans la ligne TOTAL
+# --------------------------------------
 
 for annee in ANNEES:
 
-    total_mix = df_mix[annee].sum()
+    st.session_state.mix.loc[
+        st.session_state.mix["Segment"] != "TOTAL",
+        annee
+    ] = df_mix.loc[
+        df_mix["Segment"] != "TOTAL",
+        annee
+    ].values
 
-    if round(total_mix, 2) == 100:
+# --------------------------------------
+# Recalcul TOTAL
+# --------------------------------------
 
-        st.success(
-            f"{annee} : {total_mix:.0f} %"
-        )
+for annee in ANNEES:
 
-    else:
-
-        st.error(
-            f"{annee} : {total_mix:.2f} % (doit être égal à 100 %)"
-        )
+    st.session_state.mix.loc[
+        st.session_state.mix["Segment"] == "TOTAL",
+        annee
+    ] = st.session_state.mix.loc[
+        st.session_state.mix["Segment"] != "TOTAL",
+        annee
+    ].sum()
 
 # =====================================================
 # TABLEAU 3 - RESULTATS
 # =====================================================
 
-st.subheader("3️⃣ Volumes calculés")
+st.subheader("3️⃣ Volumes Calculés")
 
 df_result = pd.DataFrame()
 
-df_result["Segment"] = df_mix["Segment"]
+segments = (
+    st.session_state.mix
+    .query("Segment != 'TOTAL'")
+    ["Segment"]
+    .tolist()
+)
+
+df_result["Segment"] = segments
 
 for annee in ANNEES:
 
     volume_total = (
-        df_obj
-        .loc[df_obj["Année"] == annee, "Volume"]
-        .iloc[0]
+        df_obj.loc[
+            df_obj["Année"] == annee,
+            "Volume"
+        ].iloc[0]
+    )
+
+    mix_segment = (
+        st.session_state.mix
+        .query("Segment != 'TOTAL'")
+        [annee]
+        .values
     )
 
     df_result[annee] = (
         volume_total *
-        df_mix[annee] / 100
+        mix_segment / 100
     )
+
+# --------------------------------------
+# Ligne TOTAL
+# --------------------------------------
+
+ligne_total = {
+    "Segment": "TOTAL"
+}
+
+for annee in ANNEES:
+
+    ligne_total[annee] = df_result[annee].sum()
+
+df_result = pd.concat(
+    [
+        df_result,
+        pd.DataFrame([ligne_total])
+    ],
+    ignore_index=True
+)
+
+# --------------------------------------
+# Affichage
+# --------------------------------------
 
 st.dataframe(
     df_result.style.format({
@@ -168,7 +235,7 @@ st.dataframe(
         "2028": "{:,.0f}",
         "2029": "{:,.0f}",
         "2030": "{:,.0f}",
-        "2031": "{:,.0f}",
+        "2031": "{:,.0f}"
     }),
     hide_index=True,
     use_container_width=True
@@ -178,15 +245,19 @@ st.dataframe(
 # GRAPHIQUE
 # =====================================================
 
-st.subheader("📊 Evolution")
+st.subheader("📊 Evolution par Segment")
 
-df_graph = (
-    df_result
-    .set_index("Segment")
-    .T
+graph_df = df_result.copy()
+
+graph_df = graph_df[
+    graph_df["Segment"] != "TOTAL"
+]
+
+graph_df = graph_df.set_index("Segment")
+
+st.line_chart(
+    graph_df[ANNEES].T
 )
-
-st.line_chart(df_graph)
 
 # =====================================================
 # EXPORT EXCEL
@@ -202,7 +273,7 @@ with pd.ExcelWriter(
         index=False
     )
 
-    df_mix.to_excel(
+    st.session_state.mix.to_excel(
         writer,
         sheet_name="Mix",
         index=False
@@ -210,7 +281,7 @@ with pd.ExcelWriter(
 
     df_result.to_excel(
         writer,
-        sheet_name="Résultats",
+        sheet_name="Volumes",
         index=False
     )
 
