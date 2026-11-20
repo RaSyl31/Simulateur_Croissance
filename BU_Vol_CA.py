@@ -210,27 +210,30 @@ df_base = pd.DataFrame(
 )
 
 # =====================================================
-# CALCUL DES POIDS 2027 (UTILISÉS POUR 2027 À 2031)
+# CALCUL DES POIDS 2027 (MARQUE DANS SEGMENT + SKU DANS MARQUE)
 # =====================================================
-# 2026 reste strictement inchangé (colonne "2026")
-# Les poids de projection sont calculés sur "Base_2027"
+# Volume total par Segment sur la base 2027
 df_base["Vol_Segment_2027"] = df_base.groupby("Segment")["Base_2027"].transform("sum")
+
+# Volume total par Marque (au sein de son Segment) sur la base 2027
 df_base["Vol_Marque_2027"] = df_base.groupby(["Segment", "Marque"])["Base_2027"].transform("sum")
 
+# 1. Poids de chaque Marque dans son Segment (base 2027)
 df_base["Poids_Marque_2027"] = np.where(
     df_base["Vol_Segment_2027"] > 0,
     df_base["Vol_Marque_2027"] / df_base["Vol_Segment_2027"],
-    0,
+    0.0,
 )
 
+# 2. Poids de chaque SKU dans sa Marque (base 2027)
 df_base["Poids_SKU_2027"] = np.where(
     df_base["Vol_Marque_2027"] > 0,
     df_base["Base_2027"] / df_base["Vol_Marque_2027"],
-    0,
+    0.0,
 )
 
 # =====================================================
-# CALCUL DES VOLUMES (2027 - 2031) AVEC POIDS 2027
+# CALCUL DES VOLUMES (2027 - 2031)
 # =====================================================
 df_detail = df_base.copy()
 
@@ -243,11 +246,15 @@ for annee in ANNEES:
         .to_dict()
     )
 
+    # Volume Segment = Objectif Annuel * Mix Segment %
     volume_segment = {seg: (objectif * pct / 100.0) for seg, pct in mix_map.items()}
 
+    # Volume Marque = Volume Segment * Poids Marque 2027
     df_detail[f"MARQUE_{annee}"] = (
         df_detail["Segment"].map(volume_segment) * df_detail["Poids_Marque_2027"]
     )
+
+    # Volume SKU = Volume Marque * Poids SKU 2027
     df_detail[annee] = df_detail[f"MARQUE_{annee}"] * df_detail["Poids_SKU_2027"]
 
 # =====================================================
