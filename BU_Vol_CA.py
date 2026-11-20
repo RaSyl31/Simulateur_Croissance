@@ -226,7 +226,7 @@ df_base["Poids_SKU"] = np.where(
 )
 
 # =====================================================
-# CALCUL DES VOLUMES FUTURS (CORRIGÉ)
+# CALCUL DES VOLUMES FUTURS
 # =====================================================
 df_detail = df_base.copy()
 
@@ -241,50 +241,79 @@ for annee in ANNEES:
 
     volume_segment = {seg: (objectif * pct / 100.0) for seg, pct in mix_map.items()}
 
-    # Multiplication (*) par les poids 2026
     df_detail[f"MARQUE_{annee}"] = (
         df_detail["Segment"].map(volume_segment) * df_detail["Poids_Marque"]
     )
     df_detail[annee] = df_detail[f"MARQUE_{annee}"] * df_detail["Poids_SKU"]
 
 # =====================================================
-# CONSTRUCTION DU TABLEAU HIERARCHIQUE FINAL
+# FONCTION DE CONSTRUCTION DU TABLEAU HIERARCHIQUE
 # =====================================================
 ordre_segments = ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]
-lignes = []
 
-# Ligne TOTAL ANNEE
-ligne_total = {"Niveau": "TOTAL", "Segment": "TOTAL ANNEE", "Marque": "", "SKU": ""}
-for annee in ANNEES_ALL:
-    ligne_total[annee] = df_detail[annee].sum()
-lignes.append(ligne_total)
+def construire_tableau_hierarchique(segments_cibles):
+    df_sub = df_detail[df_detail["Segment"].isin(segments_cibles)]
+    lignes = []
 
-# Boucle Hiérarchique : Segment -> Marque -> SKU
-for segment in ordre_segments:
-    seg_data = df_detail[df_detail["Segment"] == segment]
-    if len(seg_data) == 0:
-        continue
-
-    ligne_segment = {"Niveau": "SEGMENT", "Segment": segment, "Marque": "", "SKU": ""}
+    # Ligne TOTAL (dynamique selon le filtre)
+    label_total = (
+        "TOTAL ANNEE"
+        if len(segments_cibles) == len(ordre_segments)
+        else "TOTAL SÉLECTION"
+    )
+    ligne_total = {
+        "Niveau": "TOTAL",
+        "Segment": label_total,
+        "Marque": "",
+        "SKU": "",
+    }
     for annee in ANNEES_ALL:
-        ligne_segment[annee] = seg_data[annee].sum()
-    lignes.append(ligne_segment)
+        ligne_total[annee] = df_sub[annee].sum()
+    lignes.append(ligne_total)
 
-    for marque in seg_data["Marque"].unique():
-        marq_data = seg_data[seg_data["Marque"] == marque]
+    # Boucle Hiérarchique : Segment -> Marque -> SKU
+    for segment in ordre_segments:
+        if segment not in segments_cibles:
+            continue
+        seg_data = df_sub[df_sub["Segment"] == segment]
+        if len(seg_data) == 0:
+            continue
 
-        ligne_marque = {"Niveau": "MARQUE", "Segment": "", "Marque": marque, "SKU": ""}
+        ligne_segment = {
+            "Niveau": "SEGMENT",
+            "Segment": segment,
+            "Marque": "",
+            "SKU": "",
+        }
         for annee in ANNEES_ALL:
-            ligne_marque[annee] = marq_data[annee].sum()
-        lignes.append(ligne_marque)
+            ligne_segment[annee] = seg_data[annee].sum()
+        lignes.append(ligne_segment)
 
-        for _, row in marq_data.iterrows():
-            ligne_sku = {"Niveau": "SKU", "Segment": "", "Marque": "", "SKU": row["SKU"]}
+        for marque in seg_data["Marque"].unique():
+            marq_data = seg_data[seg_data["Marque"] == marque]
+
+            ligne_marque = {
+                "Niveau": "MARQUE",
+                "Segment": "",
+                "Marque": marque,
+                "SKU": "",
+            }
             for annee in ANNEES_ALL:
-                ligne_sku[annee] = row[annee]
-            lignes.append(ligne_sku)
+                ligne_marque[annee] = marq_data[annee].sum()
+            lignes.append(ligne_marque)
 
-df_affichage = pd.DataFrame(lignes)
+            for _, row in marq_data.iterrows():
+                ligne_sku = {
+                    "Niveau": "SKU",
+                    "Segment": "",
+                    "Marque": "",
+                    "SKU": row["SKU"],
+                }
+                for annee in ANNEES_ALL:
+                    ligne_sku[annee] = row[annee]
+                lignes.append(ligne_sku)
+
+    return pd.DataFrame(lignes)
 
 # =====================================================
 # GRAPHIQUES D'EVOLUTION
@@ -294,7 +323,6 @@ st.subheader("📊 Visualisation des Évolutions (2026–2031)")
 
 col_g1, col_g2 = st.columns(2)
 
-# Préparation des données agrégées par Segment
 df_chart_seg = df_detail.groupby("Segment", as_index=False)[ANNEES_ALL].sum()
 df_chart_seg_melt = df_chart_seg.melt(
     id_vars="Segment", var_name="Année", value_name="Volume"
@@ -325,12 +353,18 @@ with col_g2:
     st.plotly_chart(fig_line, use_container_width=True)
 
 # =====================================================
-# AFFICHAGE DU TABLEAU HIERARCHIQUE
+# AFFICHAGE DU TABLEAU HIERARCHIQUE AVEC FILTRE SEGMENT
 # =====================================================
 st.divider()
 st.subheader("3️⃣ Volumes Simulés Détaillés")
 
-# Mise en valeur visuelle des lignes Total / Segment / Marque
+segments_selectionnes = st.multiselect(
+    "🔍 Filtrer par Segment :",
+    options=ordre_segments,
+    default=ordre_segments,
+    placeholder="Choisissez un ou plusieurs segments...",
+)
+
 def style_hierarchie(row):
     if row["Niveau"] == "TOTAL":
         return ["background-color: #1f4e78; color: white; font-weight: bold"] * len(row)
@@ -340,28 +374,32 @@ def style_hierarchie(row):
         return ["background-color: #f2f2f2; font-weight: bold"] * len(row)
     return [""] * len(row)
 
-df_display_clean = df_affichage.drop(columns=["Niveau"])
-
-st.dataframe(
-    df_affichage.style.apply(style_hierarchie, axis=1).format(
-        {annee: "{:,.0f}" for annee in ANNEES_ALL}
-    ),
-    column_order=["Segment", "Marque", "SKU"] + ANNEES_ALL,
-    hide_index=True,
-    use_container_width=True,
-    height=900,
-)
+if not segments_selectionnes:
+    st.info("Veuillez sélectionner au moins un segment dans le filtre ci-dessus pour afficher le tableau.")
+else:
+    df_affichage_filtre = construire_tableau_hierarchique(segments_selectionnes)
+    st.dataframe(
+        df_affichage_filtre.style.apply(style_hierarchie, axis=1).format(
+            {annee: "{:,.0f}" for annee in ANNEES_ALL}
+        ),
+        column_order=["Segment", "Marque", "SKU"] + ANNEES_ALL,
+        hide_index=True,
+        use_container_width=True,
+        height=900,
+    )
 
 # =====================================================
-# EXPORT EXCEL CORRIGÉ (EN MÉMOIRE + FORMATAGE)
+# EXPORT EXCEL COMPLET (TOUS LES SEGMENTS)
 # =====================================================
 st.divider()
+
+df_export_complet = construire_tableau_hierarchique(ordre_segments).drop(columns=["Niveau"])
 
 buffer = io.BytesIO()
 with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
     df_obj.to_excel(writer, sheet_name="1_Objectifs", index=False)
     st.session_state.mix.to_excel(writer, sheet_name="2_Mix_Segment", index=False)
-    df_display_clean.to_excel(writer, sheet_name="3_Simulation_SKU", index=False)
+    df_export_complet.to_excel(writer, sheet_name="3_Simulation_SKU", index=False)
 
     # Ajustement automatique de la largeur des colonnes
     for sheetname in writer.sheets:
