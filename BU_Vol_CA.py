@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
 
 # ============================================================
 # CONFIGURATION DE LA PAGE
@@ -13,23 +12,17 @@ st.set_page_config(
     layout="wide"
 )
 
-# Style personnalisé pour se rapprocher de l'Excel
+# Style personnalisé pour se rapprocher de l'Excel (Rouge Alcomix)
 st.markdown("""
 <style>
-    .reportview-container {
-        background: #f0f2f6
-    }
-    h1, h2, h3 {
-        color: #b30000;
-    }
-    .stDataFrame {
-        border: 1px solid #b30000;
-    }
+    .stDataFrame { border: 1px solid #b30000; }
+    h1, h2, h3 { color: #b30000; }
+    div[data-testid="stMetricValue"] { color: #b30000; }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# DONNÉES 2026 (Catalogue complet avec Volumes)
+# DONNÉES 2026
 # ============================================================
 DONNEES_2026 = {
     "Alcomix": {
@@ -88,11 +81,10 @@ DONNEES_2026 = {
     },
 }
 
-# Produits à arrêter (Volume mis à 0 à partir de 2027)
 PRODUITS_ARRETES = ["BOTA Fresh 50 cl VER", "Racines 33 cl VER"]
 
 # ============================================================
-# INITIALISATION DES DONNÉES
+# INITIALISATION DES DONNÉES ET POIDS (CASCADE)
 # ============================================================
 @st.cache_data
 def preparer_donnees():
@@ -100,32 +92,32 @@ def preparer_donnees():
     for segment, marques in DONNEES_2026.items():
         for marque, articles in marques.items():
             for article, volume in articles.items():
-                rows.append({
-                    "Segment": segment,
-                    "Marque": marque,
-                    "Article": article,
-                    "Volume_2026": volume
-                })
+                rows.append({"Segment": segment, "Marque": marque, "Article": article, "Volume_2026": volume})
     df = pd.DataFrame(rows)
     
-    # Calcul des poids initiaux
-    df["Poids_Art"] = df.groupby("Marque")["Volume_2026"].transform(lambda x: x / x.sum() if x.sum() > 0 else 0)
+    # Arrêt des produits
+    df["Volume_2026_Ajuste"] = df.apply(lambda row: 0 if row["Article"] in PRODUITS_ARRETES else row["Volume_2026"], axis=1)
     
-    # Application de l'arrêt des produits
-    df["Volume_2026_Ajuste"] = df.apply(
-        lambda row: 0 if row["Article"] in PRODUITS_ARRETES else row["Volume_2026"], axis=1
-    )
-    return df
+    # 1. Poids du Segment dans le Total
+    total_global = df["Volume_2026_Ajuste"].sum()
+    df["Poids_Seg_Total"] = df["Volume_2026_Ajuste"] / total_global
+    
+    # 2. Poids de la Marque dans le Segment
+    vol_par_seg = df.groupby("Segment")["Volume_2026_Ajuste"].transform("sum")
+    df["Poids_Marq_Seg"] = df["Volume_2026_Ajuste"] / vol_par_seg
+    
+    # 3. Poids de l'Article dans la Marque
+    vol_par_marq = df.groupby("Marque")["Volume_2026_Ajuste"].transform("sum")
+    df["Poids_Art_Marq"] = df["Volume_2026_Ajuste"] / vol_par_marq
+    
+    return df, total_global
 
-df_base = preparer_donnees()
-TOTAL_2026 = df_base["Volume_2026_Ajuste"].sum() # ~4,297,000
+df_base, TOTAL_2026 = preparer_donnees()
 
 # ============================================================
 # SIDEBAR : PILOTAGE DES OBJECTIFS
 # ============================================================
-st.sidebar.header("🎯 Objectifs Annuels")
-
-st.sidebar.markdown("Définissez le volume total visé pour chaque année :")
+st.sidebar.header("🎯 Objectifs Annuels Globaux")
 obj_2027 = st.sidebar.number_input("Objectif 2027", min_value=0, value=4600000, step=100000)
 obj_2028 = st.sidebar.number_input("Objectif 2028", min_value=0, value=4900000, step=100000)
 obj_2029 = st.sidebar.number_input("Objectif 2029", min_value=0, value=5250000, step=100000)
@@ -135,84 +127,84 @@ obj_2031 = st.sidebar.number_input("Objectif 2031", min_value=0, value=6000000, 
 objectifs = {2027: obj_2027, 2028: obj_2028, 2029: obj_2029, 2030: obj_2030, 2031: obj_2031}
 
 # ============================================================
-# CALCULS DE SIMULATION
+# CALCULS DE LA CASCADE POUR LA SIMULATION
 # ============================================================
-# Création d'un DataFrame de simulation avec les années en colonnes
-df_sim = df_base[["Segment", "Marque", "Article", "Volume_2026_Ajuste", "Poids_Art"]].copy()
+df_sim = df_base.copy()
 df_sim.rename(columns={"Volume_2026_Ajuste": "2026"}, inplace=True)
 
 for annee, objectif in objectifs.items():
-    # Répartition proportionnelle basée sur le poids de l'article dans sa marque
-    # (On multiplie le poids par le volume total cible)
-    df_sim[str(annee)] = df_sim["Poids_Art"] * objectif
+    # CASCADE : On applique le poids du segment au total, etc.
+    df_sim[str(annee)] = objectif * df_sim["Poids_Seg_Total"] * df_sim["Poids_Marq_Seg"] * df_sim["Poids_Art_Marq"]
 
 # ============================================================
 # AFFICHAGE DU DASHBOARD
 # ============================================================
 st.title("📈 Simulateur de Croissance Annuelle - Alcomix")
 
-# --- CALCUL DES CAGR GLOBAUX ---
+# --- KPIs ---
 cagr_global = ((obj_2031 / TOTAL_2026) ** (1/5) - 1) * 100 if TOTAL_2026 > 0 else 0
-
-# Bandeau supérieur
 col1, col2, col3 = st.columns(3)
 col1.metric("Volume 2026", f"{TOTAL_2026:,.0f}")
 col2.metric("Volume 2031 (Cible)", f"{obj_2031:,.0f}")
 col3.metric("CAGR Global 26-31", f"{cagr_global:.2f} %")
 
-# --- TABLEAU CROSSTAB (Segments) ---
-st.markdown("### 📊 Demande par Segment")
+st.divider()
+
+# --- TABLEAU 1 : DEMANDE PAR SEGMENT (ANNUEL) ---
+st.markdown("### 📊 Demande par Segment (Vue Annuelle)")
 df_seg = df_sim.groupby("Segment").sum(numeric_only=True).reset_index()
-df_seg = df_seg.drop(columns=["Poids_Art"])
 
-# Formatage pour l'affichage
-df_seg_display = df_seg.copy()
-for col in df_seg_display.columns[1:]:
-    df_seg_display[col] = df_seg_display[col].apply(lambda x: f"{x:,.0f}".replace(",", " "))
+# Ajout CAGR
+df_seg["CAGR 26-31"] = ((df_seg["2031"] / df_seg["2026"].replace(0, 1)) ** (1/5) - 1) * 100
+df_seg["CAGR 26-31"] = df_seg["CAGR 26-31"].apply(lambda x: f"{x:.1f} %" if pd.notnull(x) else "-")
 
-st.dataframe(df_seg_display.set_index("Segment"), use_container_width=True)
+# Formatage
+cols_annees = [str(y) for y in range(2026, 2032)]
+df_seg_display = df_seg.set_index("Segment")[cols_annees + ["CAGR 26-31"]].copy()
+for col in cols_annees:
+    df_seg_display[col] = df_seg_display[col].apply(lambda x: f"{x:,.0f}".replace(",", " ") if pd.notnull(x) else "-")
 
-# --- TABLEAUX DÉTAILLÉS PAR SEGMENT ---
+st.dataframe(df_seg_display, use_container_width=True)
+
+# --- TABLEAU 2 : OBJECTIFS MENSUELS ET MIX (Nouveau !) ---
+st.markdown("### 📅 Objectifs Mensuels et Mix (Par Segment)")
+
+annee_cible = st.selectbox("Sélectionnez l'année cible pour la vue mensuelle :", [2027, 2028, 2029, 2030, 2031], index=0)
+
+# Calcul du mix global par segment pour l'année choisie
+mix_seg_an = df_sim.groupby("Segment")[str(annee_cible)].sum().reset_index()
+mix_seg_an["Mix %"] = (mix_seg_an[str(annee_cible)] / mix_seg_an[str(annee_cible)].sum()) * 100
+mix_seg_an[str(annee_cible)] = mix_seg_an[str(annee_cible)].apply(lambda x: f"{x:,.0f}".replace(",", " "))
+mix_seg_an["Mix %"] = mix_seg_an["Mix %"].apply(lambda x: f"{x:.1f} %")
+
+# On calcule la répartition mensuelle linéaire (Total / 12)
+objectif_annuel = objectifs[annee_cible]
+objectif_mensuel_moyen = objectif_annuel / 12
+
+# Création du tableau
+df_mensuel = pd.DataFrame({
+    "Segment": mix_seg_an["Segment"],
+    "Objectif Annuel": mix_seg_an[str(annee_cible)],
+    "Mix %": mix_seg_an["Mix %"],
+    "Moyenne Mensuelle": (mix_seg_an[str(annee_cible)].str.replace(" ", "").astype(float) / 12).apply(lambda x: f"{x:,.0f}".replace(",", " "))
+})
+
+st.dataframe(df_mensuel.set_index("Segment"), use_container_width=True)
+st.caption(f"* Objectif mensuel moyen basé sur un total de {objectif_annuel:,.0f} unités pour {annee_cible}.*")
+
+# --- TABLEAU 3 : DÉTAIL PAR SEGMENT ET MARQUE ---
 st.markdown("### 📦 Détail par Segment et Marque")
-
-# On ajoute le CAGR par segment
-df_seg_cagr = df_seg.copy()
-df_seg_cagr["CAGR 26-31"] = ((df_seg_cagr["2031"] / df_seg_cagr["2026"]) ** (1/5) - 1) * 100
-df_seg_cagr["CAGR 26-31"] = df_seg_cagr["CAGR 26-31"].apply(lambda x: f"{x:.1f} %")
-
 for segment in df_sim["Segment"].unique():
     with st.expander(f"🔹 Segment : {segment}"):
         df_detail = df_sim[df_sim["Segment"] == segment].copy()
         
-        # Affichage par Marque
+        # Vue Marque
         df_marque = df_detail.groupby("Marque").sum(numeric_only=True).reset_index()
-        df_marque = df_marque.drop(columns=["Poids_Art"])
+        cols_affichage = ["Marque"] + cols_annees
+        df_marque_display = df_marque[cols_affichage].set_index("Marque")
         
-        # Formatage
-        df_marque_display = df_marque.copy()
-        for col in df_marque_display.columns[1:]:
-            df_marque_display[col] = df_marque_display[col].apply(lambda x: f"{x:,.0f}".replace(",", " "))
+        for col in cols_annees:
+            df_marque_display[col] = df_marque_display[col].apply(lambda x: f"{x:,.0f}".replace(",", " ") if pd.notnull(x) else "-")
             
-        st.markdown(f"**Marques du segment {segment}**")
-        st.dataframe(df_marque_display.set_index("Marque"), use_container_width=True)
-        
-        # Affichage par Article
-        st.markdown(f"**Articles du segment {segment}**")
-        df_art = df_detail[["Marque", "Article"] + [str(y) for y in range(2026, 2032)]].copy()
-        
-        # Formatage
-        for col in df_art.columns[2:]:
-            df_art[col] = df_art[col].apply(lambda x: f"{x:,.0f}".replace(",", " "))
-            
-        st.dataframe(df_art.set_index(["Marque", "Article"]), use_container_width=True)
-
-# --- GRAPHIQUE D'ÉVOLUTION ---
-st.markdown("### 📈 Évolution Globale 2026 - 2031")
-df_evol = pd.DataFrame({
-    "Année": [2026, 2027, 2028, 2029, 2030, 2031],
-    "Volume": [TOTAL_2026] + list(objectifs.values())
-})
-fig = px.bar(df_evol, x="Année", y="Volume", text="Volume", title="Objectif de Volume Global")
-fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
-fig.update_layout(yaxis_title="Volume (unités)", xaxis_title="Année")
-st.plotly_chart(fig, use_container_width=True)
+        st.markdown(f"**Marques**")
+        st.dataframe(df_marque_display, use_container_width=True)
