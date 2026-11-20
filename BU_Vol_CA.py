@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 
-# ======================================================
-# CONFIG
-# ======================================================
+# =====================================================
+# CONFIGURATION
+# =====================================================
 
 st.set_page_config(
     page_title="Simulateur S&OP",
@@ -14,36 +14,11 @@ st.title("📈 Simulateur S&OP THB")
 
 ANNEES = ["2027", "2028", "2029", "2030", "2031"]
 
-# ======================================================
-# DONNEES HISTORIQUES 2026
-# Remplacer par votre base complète
-# ======================================================
+# =====================================================
+# TABLEAU 1 - OBJECTIFS GLOBAUX
+# =====================================================
 
-df_2026 = pd.DataFrame({
-    "Segment": [
-        "Alcomix",
-        "BG",
-        "BIERES",
-        "EAUX",
-        "Energy"
-    ],
-    "Volume_2026": [
-        37471,
-        1081747,
-        2071848,
-        825388,
-        42627
-    ]
-})
-
-TOTAL_2026 = df_2026["Volume_2026"].sum()
-
-# ======================================================
-# TABLEAU 1
-# OBJECTIFS GLOBAUX
-# ======================================================
-
-st.subheader("1️⃣ Objectifs globaux")
+st.subheader("1️⃣ Objectifs Globaux")
 
 if "obj" not in st.session_state:
 
@@ -60,17 +35,25 @@ if "obj" not in st.session_state:
 
 df_obj = st.data_editor(
     st.session_state.obj,
+    column_config={
+        "Année": st.column_config.TextColumn(
+            "Année",
+            disabled=True
+        ),
+        "Volume": st.column_config.NumberColumn(
+            "Volume",
+            format="%d"
+        )
+    },
     hide_index=True,
-    use_container_width=True,
-    key="obj_editor"
+    use_container_width=True
 )
 
 st.session_state.obj = df_obj
 
-# ======================================================
-# TABLEAU 2
-# MIX SEGMENTS
-# ======================================================
+# =====================================================
+# TABLEAU 2 - MIX SEGMENTS
+# =====================================================
 
 st.subheader("2️⃣ Mix Segment (%)")
 
@@ -93,6 +76,40 @@ if "mix" not in st.session_state:
 
 df_mix = st.data_editor(
     st.session_state.mix,
+
+    column_config={
+
+        "Segment": st.column_config.TextColumn(
+            "Segment",
+            disabled=True
+        ),
+
+        "2027": st.column_config.NumberColumn(
+            "2027",
+            format="%d %%"
+        ),
+
+        "2028": st.column_config.NumberColumn(
+            "2028",
+            format="%d %%"
+        ),
+
+        "2029": st.column_config.NumberColumn(
+            "2029",
+            format="%d %%"
+        ),
+
+        "2030": st.column_config.NumberColumn(
+            "2030",
+            format="%d %%"
+        ),
+
+        "2031": st.column_config.NumberColumn(
+            "2031",
+            format="%d %%"
+        ),
+    },
+
     hide_index=True,
     use_container_width=True,
     key="mix_editor"
@@ -100,23 +117,31 @@ df_mix = st.data_editor(
 
 st.session_state.mix = df_mix
 
-# Contrôle des sommes
+# =====================================================
+# CONTROLE 100%
+# =====================================================
+
+st.markdown("### ✅ Contrôle des Mix")
 
 for annee in ANNEES:
 
     total_mix = df_mix[annee].sum()
 
     if round(total_mix, 2) == 100:
-        st.success(f"{annee} : 100 %")
-    else:
-        st.warning(
-            f"{annee} : {total_mix:.2f}% (doit être égal à 100%)"
+
+        st.success(
+            f"{annee} : {total_mix:.0f} %"
         )
 
-# ======================================================
-# TABLEAU 3
-# CALCUL VOLUMES SEGMENTS
-# ======================================================
+    else:
+
+        st.error(
+            f"{annee} : {total_mix:.2f} % (doit être égal à 100 %)"
+        )
+
+# =====================================================
+# TABLEAU 3 - RESULTATS
+# =====================================================
 
 st.subheader("3️⃣ Volumes calculés")
 
@@ -124,54 +149,52 @@ df_result = pd.DataFrame()
 
 df_result["Segment"] = df_mix["Segment"]
 
-df_result["2026"] = df_result["Segment"].map(
-    dict(
-        zip(
-            df_2026["Segment"],
-            df_2026["Volume_2026"]
-        )
-    )
-)
-
 for annee in ANNEES:
 
     volume_total = (
         df_obj
-        .loc[
-            df_obj["Année"] == annee,
-            "Volume"
-        ]
+        .loc[df_obj["Année"] == annee, "Volume"]
         .iloc[0]
     )
 
     df_result[annee] = (
+        volume_total *
         df_mix[annee] / 100
-    ) * volume_total
+    )
 
 st.dataframe(
-    df_result.style.format("{:,.0f}"),
+    df_result.style.format({
+        "2027": "{:,.0f}",
+        "2028": "{:,.0f}",
+        "2029": "{:,.0f}",
+        "2030": "{:,.0f}",
+        "2031": "{:,.0f}",
+    }),
+    hide_index=True,
     use_container_width=True
 )
 
-# ======================================================
-# EVOLUTION
-# ======================================================
+# =====================================================
+# GRAPHIQUE
+# =====================================================
 
-st.subheader("📊 Evolution par segment")
+st.subheader("📊 Evolution")
 
-df_graph = df_result.set_index("Segment")
-
-st.line_chart(
-    df_graph[ANNEES].T
+df_graph = (
+    df_result
+    .set_index("Segment")
+    .T
 )
 
-# ======================================================
+st.line_chart(df_graph)
+
+# =====================================================
 # EXPORT EXCEL
-# ======================================================
+# =====================================================
 
-excel_file = "Simulation_SOP.xlsx"
-
-with pd.ExcelWriter(excel_file) as writer:
+with pd.ExcelWriter(
+    "Simulation_SOP.xlsx"
+) as writer:
 
     df_obj.to_excel(
         writer,
@@ -187,15 +210,18 @@ with pd.ExcelWriter(excel_file) as writer:
 
     df_result.to_excel(
         writer,
-        sheet_name="Volumes",
+        sheet_name="Résultats",
         index=False
     )
 
-with open(excel_file, "rb") as f:
+with open(
+    "Simulation_SOP.xlsx",
+    "rb"
+) as fichier:
 
     st.download_button(
-        label="📥 Télécharger Excel",
-        data=f,
+        "📥 Télécharger Excel",
+        data=fichier,
         file_name="Simulation_SOP.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
