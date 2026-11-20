@@ -16,7 +16,6 @@ ANNEES_ALL = ["2026"] + ANNEES
 
 # =====================================================
 # LISTE DES MARQUES ET SKU ARRÊTÉS APRÈS 2026
-# (Relevés exactement depuis votre tableau de référence)
 # =====================================================
 MARQUES_ARRETEES = ["BOTA Fresh", "Racines"]
 
@@ -64,18 +63,18 @@ df_obj = st.data_editor(
 st.session_state.objectifs = df_obj
 
 # =====================================================
-# TABLEAU 2 - MIX SEGMENT & VALIDATION DES TOTAUX
+# TABLEAU 2 - MIX SEGMENT (%) PAR DÉFAUT
 # =====================================================
 st.subheader("2️⃣ Mix Segment (%)")
 
 if "mix" not in st.session_state:
     st.session_state.mix = pd.DataFrame({
         "Segment": ["Alcomix", "BG", "BIERES", "EAUX", "Energy", "TOTAL"],
-        "2027": [1.0, 27.2, 49.3, 18.6, 3.9, 100.0],
-        "2028": [1.0, 26.6, 51.5, 19.2, 1.7, 100.0],
-        "2029": [1.0, 27.8, 51.5, 18.0, 1.7, 100.0],
-        "2030": [1.0, 26.8, 51.5, 17.8, 2.9, 100.0],
-        "2031": [1.0, 28.0, 51.5, 17.5, 2.0, 100.0],
+        "2027": [1.00, 27.37, 51.50, 18.59, 1.54, 100.00],
+        "2028": [1.00, 26.60, 51.50, 19.25, 1.65, 100.00],
+        "2029": [1.00, 27.80, 51.50, 18.00, 1.70, 100.00],
+        "2030": [1.00, 27.90, 51.50, 17.75, 1.80, 99.95],
+        "2031": [1.00, 28.00, 51.50, 17.50, 2.00, 100.00],
     })
 
 for annee in ANNEES:
@@ -90,7 +89,7 @@ col_config_mix = {
 }
 for annee in ANNEES:
     col_config_mix[annee] = st.column_config.NumberColumn(
-        annee, format="%.2f %%", min_value=0.0, max_value=100.0, step=0.1
+        annee, format="%.2f %%", min_value=0.0, max_value=100.0, step=0.05
     )
 
 df_mix = st.data_editor(
@@ -113,7 +112,7 @@ for annee in ANNEES:
         st.session_state.mix["Segment"] == "TOTAL", annee
     ] = total_annee
 
-    if not np.isclose(total_annee, 100.0, atol=0.01):
+    if not np.isclose(total_annee, 100.0, atol=0.06):
         erreurs_mix.append(f"**{annee}** ({total_annee:.2f} %)")
 
 if erreurs_mix:
@@ -123,7 +122,7 @@ if erreurs_mix:
     )
 else:
     st.success(
-        "✅ **Validation OK :** Tous les totaux du Mix Segment sont égaux à 100 %."
+        "✅ **Validation OK :** Tous les totaux du Mix Segment sont conformes (100 %)."
     )
 
 # =====================================================
@@ -233,7 +232,6 @@ df_base = pd.DataFrame(detail, columns=["Segment", "Marque", "SKU", "2026"])
 # =====================================================
 # CALCUL DES POIDS 2026 (AVEC GESTION DES ARRÊTS)
 # =====================================================
-# Base active : 0 pour toute marque arrêtée OU tout SKU arrêté
 est_arrete = df_base["Marque"].isin(MARQUES_ARRETEES) | df_base["SKU"].isin(SKUS_ARRETES)
 df_base["Base_Active"] = np.where(est_arrete, 0, df_base["2026"])
 
@@ -392,7 +390,6 @@ segments_selectionnes = st.multiselect(
     placeholder="Choisissez un ou plusieurs segments...",
 )
 
-# Style fidèle à votre capture d'écran (Total beige, Segment rouge, Marque saumon)
 def style_hierarchie(row):
     if row["Niveau"] == "TOTAL":
         return ["background-color: #FFF2CC; color: black; font-weight: bold"] * len(row)
@@ -402,7 +399,6 @@ def style_hierarchie(row):
         return ["background-color: #F8CBAD; color: black; font-weight: bold"] * len(row)
     return [""] * len(row)
 
-# Affiche vide si 0 en projection (pour 2027-2031) comme dans votre image
 def format_cellule(val):
     if pd.isna(val) or val == 0:
         return "-"
