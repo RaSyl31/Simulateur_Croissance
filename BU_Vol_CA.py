@@ -68,9 +68,10 @@ DONNEES_2026 = {
 }
 
 PRODUITS_ARRETES = ["BOTA Fresh 50 cl VER", "Racines 33 cl VER"]
+ANNEES = ["2026", "2027", "2028", "2029", "2030", "2031"]
 
 # ============================================================
-# PREPARATION DES DONNÉES ET CALCUL DU MIX
+# PREPARATION DES DONNÉES
 # ============================================================
 @st.cache_data
 def preparer_donnees():
@@ -81,21 +82,19 @@ def preparer_donnees():
                 rows.append({"Segment": segment, "Marque": marque, "Article": article, "2026": volume})
     df = pd.DataFrame(rows)
     
-    # Arrêt des produits
     df["2026"] = df.apply(lambda row: 0 if row["Article"] in PRODUITS_ARRETES else row["2026"], axis=1)
     
-    # Calcul des poids
     total_2026 = df["2026"].sum()
     df["Poids_Segment"] = df.groupby("Segment")["2026"].transform("sum") / total_2026
     df["Poids_Marque"] = df.groupby(["Segment", "Marque"])["2026"].transform("sum") / df.groupby("Segment")["2026"].transform("sum")
     df["Poids_Article"] = df["2026"] / df.groupby(["Segment", "Marque"])["2026"].transform("sum")
     
-    return df, total_2026
+    return df
 
-df_base, TOTAL_2026 = preparer_donnees()
+df_base = preparer_donnees()
 
 # ============================================================
-# INITIALISATION DE L'ÉTAT
+# INITIALISATION DE L'ÉTAT (Sécurité pour les colonnes)
 # ============================================================
 if "objets_seg" not in st.session_state:
     st.session_state.objets_seg = pd.DataFrame({
@@ -112,7 +111,7 @@ if "objets_seg" not in st.session_state:
 # ============================================================
 st.title("📈 Simulateur de Croissance - Alcomix")
 
-st.markdown("### 🎛️ 1. Définir les objectifs par Segment (Modifiable)")
+st.markdown("### 🎛️ 1. Définir les objectifs par Segment")
 edited_df = st.data_editor(
     st.session_state.objets_seg,
     column_config={
@@ -129,43 +128,39 @@ edited_df = st.data_editor(
 )
 st.session_state.objets_seg = edited_df
 
+# --- CORRECTION DU BUG : On force les colonnes en string ---
+edited_df.columns = [str(c) for c in edited_df.columns]
+
 # ============================================================
-# CALCUL DES VOLUMES ET CREATION DU TABLEAU FINAL
+# CALCUL DES VOLUMES
 # ============================================================
 df_final = df_base.copy()
-annees = ["2026", "2027", "2028", "2029", "2030", "2031"]
 
-# On applique les objectifs saisis
-for annee in annees[1:]:
-    dict_obj = edited_df.set_index("Segment")[annee].to_dict()
-    df_final[annee] = df_final["Segment"].map(dict_obj) * df_final["Poids_Marque"] * df_final["Poids_Article"]
+for annee in ANNEES[1:]:
+    # On s'assure que la colonne existe bien (elle existe grâce à la conversion en str)
+    if annee in edited_df.columns:
+        dict_obj = edited_df.set_index("Segment")[annee].to_dict()
+        df_final[annee] = df_final["Segment"].map(dict_obj) * df_final["Poids_Marque"] * df_final["Poids_Article"]
 
-# --- AGRÉGATION POUR LE TABLEAU ---
-# 1. Par Article
-df_art = df_final[["Segment", "Marque", "Article"] + annees].copy()
-
-# 2. Par Marque
-df_marq = df_final.groupby(["Segment", "Marque"])[annees].sum().reset_index()
-
-# 3. Par Segment
-df_seg = df_final.groupby("Segment")[annees].sum().reset_index()
-
-# 4. Total Annuel
-df_total = df_final[annees].sum().to_frame().T
+# --- AGRÉGATION ---
+df_art = df_final[["Segment", "Marque", "Article"] + ANNEES].copy()
+df_marq = df_final.groupby(["Segment", "Marque"])[ANNEES].sum().reset_index()
+df_seg = df_final.groupby("Segment")[ANNEES].sum().reset_index()
+df_total = df_final[ANNEES].sum().to_frame().T
 df_total.insert(0, "Segment", "TOTAL ANNEE")
 df_total.insert(1, "Marque", "")
 df_total.insert(2, "Article", "")
 
-# --- FUSION POUR AVOIR L'ORDRE EXACT ---
+# ============================================================
+# FUSION POUR L'AFFICHAGE
+# ============================================================
 lignes_finales = []
 for seg in ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]:
-    # Ligne Segment
     row_seg = df_seg[df_seg["Segment"] == seg].iloc[0].to_dict()
     row_seg["Marque"] = ""
     row_seg["Article"] = ""
     lignes_finales.append(row_seg)
     
-    # Lignes Marques et Articles
     marques = df_marq[df_marq["Segment"] == seg]
     for _, marq in marques.iterrows():
         row_marq = marq.to_dict()
@@ -176,64 +171,48 @@ for seg in ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]:
         for _, art in articles.iterrows():
             lignes_finales.append(art.to_dict())
 
-# Ajout de la ligne Total à la fin
 lignes_finales.append(df_total.iloc[0].to_dict())
-
 df_affichage = pd.DataFrame(lignes_finales)
 
 # ============================================================
-# STYLISATION (Reproduction de l'Excel)
+# STYLISATION (EXCEL STYLE)
 # ============================================================
 def style_tableau(df):
-    # Styles de base
     styles = pd.DataFrame('', index=df.index, columns=df.columns)
-    
-    # Couleurs
     RED_BG = "background-color: #b30000; color: white; font-weight: bold;"
     LIGHT_RED_BG = "background-color: #f4cccc; color: black;"
     GREY_BG = "background-color: #d9d9d9; font-weight: bold;"
     WHITE_BG = "background-color: white;"
     
-    # Appliquer les couleurs selon la hiérarchie
     for i, row in df.iterrows():
         if row["Segment"] == "TOTAL ANNEE":
             styles.loc[i, ["Segment", "Marque", "Article"]] = RED_BG
-            styles.loc[i, annees] = "background-color: #b30000; color: white; font-weight: bold;"
-            
-        elif row["Marque"] == "" and row["Article"] == "": # C'est un Segment
+            styles.loc[i, ANNEES] = RED_BG
+        elif row["Marque"] == "" and row["Article"] == "": 
             styles.loc[i, ["Segment", "Marque", "Article"]] = LIGHT_RED_BG + " font-weight: bold;"
-            styles.loc[i, annees] = LIGHT_RED_BG + " font-weight: bold;"
-            
-        elif row["Article"] == "": # C'est une Marque
+            styles.loc[i, ANNEES] = LIGHT_RED_BG + " font-weight: bold;"
+        elif row["Article"] == "": 
             styles.loc[i, ["Segment", "Marque", "Article"]] = GREY_BG
-            styles.loc[i, annees] = GREY_BG
-            
-        else: # C'est un Article
+            styles.loc[i, ANNEES] = GREY_BG
+        else: 
             styles.loc[i, ["Segment", "Marque", "Article"]] = WHITE_BG
-            # Mise en évidence du "BOTA Fresh" et "Racines" (arrêtés)
             if row["Article"] in PRODUITS_ARRETES:
-                styles.loc[i, annees] = "background-color: #d9ead3; color: black;" # Vert clair
+                styles.loc[i, ANNEES] = "background-color: #d9ead3; color: black;" 
                 
     return styles
 
-# Formatage des nombres
-format_dict = {annee: "{:,.0f}" for annee in annees}
-
-# Application du style
+format_dict = {annee: "{:,.0f}" for annee in ANNEES}
 styled_df = df_affichage.style.apply(style_tableau, axis=None).format(format_dict)
 
 # ============================================================
-# AFFICHAGE DU TABLEAU
+# AFFICHAGE
 # ============================================================
-st.markdown("### 📊 2. Tableau de Bord Détaillé (Vue Excel)")
+st.markdown("### 📊 2. Tableau de Bord Détaillé")
 st.dataframe(styled_df, use_container_width=True, height=800)
 
-# ============================================================
-# TABLEAU MENSUEL (Bonus)
-# ============================================================
 st.markdown("---")
 st.markdown("### 📅 3. Répartition Mensuelle")
-annee_cible = st.selectbox("Sélectionnez l'année pour voir la répartition mensuelle :", annees[1:])
+annee_cible = st.selectbox("Sélectionnez l'année :", ANNEES[1:])
 df_mensuel = df_seg[["Segment", annee_cible]].copy()
 df_mensuel["Mix %"] = (df_mensuel[annee_cible] / df_mensuel[annee_cible].sum()) * 100
 df_mensuel["Moyenne Mensuelle"] = df_mensuel[annee_cible] / 12
