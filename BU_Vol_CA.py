@@ -7,8 +7,8 @@ from typing import List, Dict, Optional
 
 
 # ============================================================
-#  CATALOGUE : Segment → Marque → Liste d'articles
-#  (Seuls les articles portent une contenance en cl / L / CAN / VER / PET / FUT)
+#  CATALOGUE INTÉGRÉ : Segment → Marque → Articles
+#  (Les marques n'ont PAS de contenance — seuls les articles en ont)
 # ============================================================
 CATALOGUE: Dict[str, Dict[str, List[str]]] = {
     "Alcomix": {
@@ -16,124 +16,67 @@ CATALOGUE: Dict[str, Dict[str, List[str]]] = {
             "Booster Appel-Mix 50CL VER",
             "Booster Tornado 50CL VER VER",
         ],
-        "BOTA Fresh": [
-            "BOTA Fresh 50 cl VER",
-        ],
-        "Racines": [
-            "Racines 33 cl VER",
-        ],
+        "BOTA Fresh": ["BOTA Fresh 50 cl VER"],
+        "Racines": ["Racines 33 cl VER"],
     },
     "BG": {
         "Caprice": [
-            "Caprice Ananas 100 cl VER",
-            "Caprice Ananas 150 cl PET",
-            "Caprice Ananas 30 cl VER",
-            "Caprice Bonbon Anglais 100 cl VER",
-            "Caprice Bonbon Anglais 150 cl PET",
-            "Caprice Bonbon Anglais 20L FUT",
-            "Caprice Bonbon Anglais 30 cl VER",
-            "Caprice Bonbon Anglais 33 cl CAN",
-            "Caprice Bonbon Anglais 35 cl PET",
+            "Caprice Ananas 100 cl VER", "Caprice Ananas 150 cl PET", "Caprice Ananas 30 cl VER",
+            "Caprice Bonbon Anglais 100 cl VER", "Caprice Bonbon Anglais 150 cl PET",
+            "Caprice Bonbon Anglais 20L FUT", "Caprice Bonbon Anglais 30 cl VER",
+            "Caprice Bonbon Anglais 33 cl CAN", "Caprice Bonbon Anglais 35 cl PET",
             "Caprice Bonbon Anglais 50 cl PET",
-            "Caprice Grenadine 100 cl VER",
-            "Caprice Grenadine 150 cl PET",
-            "Caprice Grenadine 30 cl VER",
-            "Caprice Grenadine 33 cl CAN",
-            "Caprice Grenadine 35 cl PET",
-            "Caprice Grenadine 50 cl PET",
-            "Caprice Orange 100 cl VER",
-            "Caprice Orange 150 cl PET",
-            "Caprice Orange 20L FUT",
-            "Caprice Orange 30 cl VER",
-            "Caprice Orange 33 cl CAN",
-            "Caprice Orange 35 cl PET",
-            "Caprice Orange 50 cl PET",
-            "Caprice Pomme 100 cl VER",
-            "Caprice Pomme 150 cl PET",
-            "Caprice Pomme 30 cl VER",
-            "Caprice Pomme 50 cl PET",
+            "Caprice Grenadine 100 cl VER", "Caprice Grenadine 150 cl PET",
+            "Caprice Grenadine 30 cl VER", "Caprice Grenadine 33 cl CAN",
+            "Caprice Grenadine 35 cl PET", "Caprice Grenadine 50 cl PET",
+            "Caprice Orange 100 cl VER", "Caprice Orange 150 cl PET", "Caprice Orange 20L FUT",
+            "Caprice Orange 30 cl VER", "Caprice Orange 33 cl CAN",
+            "Caprice Orange 35 cl PET", "Caprice Orange 50 cl PET",
+            "Caprice Pomme 100 cl VER", "Caprice Pomme 150 cl PET",
+            "Caprice Pomme 30 cl VER", "Caprice Pomme 50 cl PET",
         ],
-        "Tonic": [
-            "Tonic 100 cl VER",
-            "Tonic 30 cl VER",
-        ],
+        "Tonic": ["Tonic 100 cl VER", "Tonic 30 cl VER"],
         "World Cola": [
-            "World Cola 100cl VER",
-            "World Cola 100cl WOCO VER",
-            "World Cola 150cl PET",
-            "World Cola 30cl VER",
-            "World Cola 30cl WOCO VER",
-            "World Cola 33 cl CAN",
-            "World Cola 35cl PET",
-            "World Cola 50cl PET",
-            "World Cola 20L FUT",
+            "World Cola 100cl VER", "World Cola 100cl WOCO VER", "World Cola 150cl PET",
+            "World Cola 30cl VER", "World Cola 30cl WOCO VER", "World Cola 33 cl CAN",
+            "World Cola 35cl PET", "World Cola 50cl PET", "World Cola 20L FUT",
         ],
     },
     "BIERES": {
-        "Beaufort": [
-            "Beaufort 33 CL CAN",
-            "Beaufort 33CL VER",
-        ],
+        "Beaufort": ["Beaufort 33 CL CAN", "Beaufort 33CL VER"],
         "FRESH": [
-            "FRESH 33 cl CAN",
-            "FRESH 33 cl EXPORT CAN",
-            "THB Fresh 33 cl VER",
-            "THB Fresh 65 cl VER",
+            "FRESH 33 cl CAN", "FRESH 33 cl EXPORT CAN",
+            "THB Fresh 33 cl VER", "THB Fresh 65 cl VER",
         ],
         "Gold": [
-            "Gold 8 50 cl CAN",
-            "Gold 8 50 cl VER",
-            "Gold Blanche 33cl VER",
-            "Gold Blanche 50 cl CAN",
-            "Gold Blanche 50 cl VER",
-            "Gold Amigo 33cl VER",
-            "Gold Blonde 50 cl CAN",
-            "Gold Blonde 50 cl VER",
-            "Gold Blonde 65 cl VER",
+            "Gold 8 50 cl CAN", "Gold 8 50 cl VER", "Gold Blanche 33cl VER",
+            "Gold Blanche 50 cl CAN", "Gold Blanche 50 cl VER", "Gold Amigo 33cl VER",
+            "Gold Blonde 50 cl CAN", "Gold Blonde 50 cl VER", "Gold Blonde 65 cl VER",
             "Gold Blanche 20L FUT",
         ],
-        "Queen": [
-            "Queen s 65 cl VER",
-        ],
+        "Queen": ["Queen s 65 cl VER"],
         "THB": [
-            "THB Pilsener 33 cl VER",
-            "THB Pilsener 50 cl CAN",
-            "THB Pilsener 65 cl VER",
-            "THB Pilsener 20L FUT",
-            "THB Pilsener 30L FUT",
+            "THB Pilsener 33 cl VER", "THB Pilsener 50 cl CAN", "THB Pilsener 65 cl VER",
+            "THB Pilsener 20L FUT", "THB Pilsener 30L FUT",
             "THB Speciale NOEL 33 cl VER",
-            "THB Pilsener 20L Export FUT",
-            "THB Blanche 20L Export FUT",
-            "THB Pilsener 30L Export FUT",
-            "THB 8 20L Export FUT",
+            "THB Pilsener 20L Export FUT", "THB Blanche 20L Export FUT",
+            "THB Pilsener 30L Export FUT", "THB 8 20L Export FUT",
         ],
     },
     "EAUX": {
         "Cristal": [
-            "Cristal 100 cl VER",
-            "Cristal 150 cl PET",
-            "Cristal 30 cl VER",
-            "Cristal 50 cl VER",
+            "Cristal 100 cl VER", "Cristal 150 cl PET",
+            "Cristal 30 cl VER", "Cristal 50 cl VER",
         ],
-        "Cristalline": [
-            "Cristalline 100 cl PET",
-            "Cristalline 200 cl PET",
-        ],
+        "Cristalline": ["Cristalline 100 cl PET", "Cristalline 200 cl PET"],
         "Eau vive": [
-            "Eau vive 150 cl PET",
-            "Eau vive 50 cl PET",
-            "Eau vive 50 cl VER",
+            "Eau vive 150 cl PET", "Eau vive 50 cl PET", "Eau vive 50 cl VER",
         ],
     },
     "Energy": {
-        "FOSA": [
-            "FOSA 50 cl CAN",
-        ],
+        "FOSA": ["FOSA 50 cl CAN"],
         "XXL": [
-            "XXL 30cl BOB VER",
-            "XXL 30cl VER",
-            "XXL 33 cl CAN",
-            "XXL 35cl PET",
+            "XXL 30cl BOB VER", "XXL 30cl VER", "XXL 33 cl CAN", "XXL 35cl PET",
         ],
     },
 }
@@ -148,8 +91,8 @@ class LigneBudget:
     marque: str
     article: str
     mois: str              # "YYYY-MM"
-    volume: float          # quantité (unités/caisses)
-    prix_unitaire: float   # prix unitaire
+    volume: float
+    prix_unitaire: float
 
     @property
     def ca(self) -> float:
@@ -223,9 +166,7 @@ class BudgetAlcomix:
             print(f"🗑️ Supprimé : {l.article} ({l.mois})")
 
     # ----- AFFICHAGE -----
-    def afficher(self, filtre_segment: Optional[str] = None,
-                 filtre_marque: Optional[str] = None,
-                 filtre_mois: Optional[str] = None):
+    def afficher(self, filtre_segment=None, filtre_marque=None, filtre_mois=None):
         lignes = self.lignes
         if filtre_segment:
             lignes = [l for l in lignes if l.segment == filtre_segment]
@@ -319,23 +260,28 @@ def menu():
         choix = input("👉 Choix : ").strip()
 
         if choix == "1":
-            print("\n📚 Segments :", bm.segments())
-            seg = input("Segment : ").strip()
-            if seg not in bm.segments():
-                print("❌ Segment inconnu"); continue
+            print("\n📚 Segments disponibles :")
+            for i, s in enumerate(bm.segments()):
+                print(f"   {i}. {s}")
+            try:
+                seg = bm.segments()[int(input("N° segment : "))]
+            except (ValueError, IndexError):
+                print("❌ Saisie invalide"); continue
 
-            print("📚 Marques :", bm.marques(seg))
-            marque = input("Marque : ").strip()
+            print(f"\n📚 Marques de {seg} :")
+            for i, m in enumerate(bm.marques(seg)):
+                print(f"   {i}. {m}")
+            try:
+                marque = bm.marques(seg)[int(input("N° marque : "))]
+            except (ValueError, IndexError):
+                print("❌ Saisie invalide"); continue
+
             arts = bm.articles(seg, marque)
-            if not arts:
-                print("❌ Marque inconnue"); continue
-
-            print("📚 Articles :")
+            print(f"\n📚 Articles de {marque} :")
             for i, a in enumerate(arts):
                 print(f"   {i}. {a}")
             try:
-                idx = int(input("N° article : "))
-                article = arts[idx]
+                article = arts[int(input("N° article : "))]
                 mois = input("Mois (YYYY-MM) : ").strip()
                 vol = float(input("Volume : "))
                 pu = float(input("Prix unitaire (€) : "))
