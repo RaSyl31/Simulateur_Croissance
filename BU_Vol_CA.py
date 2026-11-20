@@ -14,6 +14,9 @@ st.title("📈 Simulateur S&OP — Prévisions 2026–2031")
 ANNEES = ["2027", "2028", "2029", "2030", "2031"]
 ANNEES_ALL = ["2026"] + ANNEES
 
+# Liste des marques arrêtées après 2026 (volume = 0 de 2027 à 2031)
+MARQUES_ARRETEES = ["BOTA Fresh", "Racines"]
+
 # =====================================================
 # TABLEAU 1 - OBJECTIFS GLOBAUX
 # =====================================================
@@ -54,7 +57,6 @@ if "mix" not in st.session_state:
         "2031": [2.0, 25.0, 55.0, 15.0, 3.0, 100.0],
     })
 
-# Recalcul du total avant affichage
 for annee in ANNEES:
     st.session_state.mix.loc[
         st.session_state.mix["Segment"] == "TOTAL", annee
@@ -78,7 +80,6 @@ df_mix = st.data_editor(
     key="mix_editor",
 )
 
-# Mise à jour du state et vérification des totaux
 erreurs_mix = []
 for annee in ANNEES:
     st.session_state.mix.loc[
@@ -211,18 +212,26 @@ df_base = pd.DataFrame(detail, columns=["Segment", "Marque", "SKU", "2026"])
 # =====================================================
 # CALCUL DES POIDS 2026
 # =====================================================
-df_base["Vol_Segment"] = df_base.groupby("Segment")["2026"].transform("sum")
-df_base["Vol_Marque"] = df_base.groupby(["Segment", "Marque"])[
-    "2026"
-].transform("sum")
-
-df_base["Poids_Marque"] = np.where(
-    df_base["Vol_Segment"] > 0,
-    df_base["Vol_Marque"] / df_base["Vol_Segment"],
+# 1. Poids de chaque article (SKU) dans sa marque basé sur les volumes réels 2026
+df_base["Vol_Marque_2026"] = df_base.groupby(["Segment", "Marque"])["2026"].transform("sum")
+df_base["Poids_SKU"] = np.where(
+    df_base["Vol_Marque_2026"] > 0,
+    df_base["2026"] / df_base["Vol_Marque_2026"],
     0,
 )
-df_base["Poids_SKU"] = np.where(
-    df_base["Vol_Marque"] > 0, df_base["2026"] / df_base["Vol_Marque"], 0
+
+# 2. Poids des marques actives dans le segment à partir de 2027
+# (Les marques arrêtées passent à 0, reportant leur poids sur les marques restantes)
+df_base["Base_Proj_Marque"] = np.where(
+    df_base["Marque"].isin(MARQUES_ARRETEES), 0, df_base["2026"]
+)
+df_base["Vol_Segment_Proj"] = df_base.groupby("Segment")["Base_Proj_Marque"].transform("sum")
+df_base["Vol_Marque_Proj"] = df_base.groupby(["Segment", "Marque"])["Base_Proj_Marque"].transform("sum")
+
+df_base["Poids_Marque"] = np.where(
+    df_base["Vol_Segment_Proj"] > 0,
+    df_base["Vol_Marque_Proj"] / df_base["Vol_Segment_Proj"],
+    0,
 )
 
 # =====================================================
@@ -241,9 +250,11 @@ for annee in ANNEES:
 
     volume_segment = {seg: (objectif * pct / 100.0) for seg, pct in mix_map.items()}
 
+    # Volume Marque = Volume Segment * Poids_Marque (0 pour marques arrêtées)
     df_detail[f"MARQUE_{annee}"] = (
         df_detail["Segment"].map(volume_segment) * df_detail["Poids_Marque"]
     )
+    # Volume SKU = Volume Marque * Poids_SKU 2026
     df_detail[annee] = df_detail[f"MARQUE_{annee}"] * df_detail["Poids_SKU"]
 
 # =====================================================
@@ -255,7 +266,6 @@ def construire_tableau_hierarchique(segments_cibles):
     df_sub = df_detail[df_detail["Segment"].isin(segments_cibles)]
     lignes = []
 
-    # Ligne TOTAL (dynamique selon le filtre)
     label_total = (
         "TOTAL ANNEE"
         if len(segments_cibles) == len(ordre_segments)
@@ -271,7 +281,6 @@ def construire_tableau_hierarchique(segments_cibles):
         ligne_total[annee] = df_sub[annee].sum()
     lignes.append(ligne_total)
 
-    # Boucle Hiérarchique : Segment -> Marque -> SKU
     for segment in ordre_segments:
         if segment not in segments_cibles:
             continue
@@ -401,7 +410,6 @@ with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
     st.session_state.mix.to_excel(writer, sheet_name="2_Mix_Segment", index=False)
     df_export_complet.to_excel(writer, sheet_name="3_Simulation_SKU", index=False)
 
-    # Ajustement automatique de la largeur des colonnes
     for sheetname in writer.sheets:
         worksheet = writer.sheets[sheetname]
         for col in worksheet.columns:
