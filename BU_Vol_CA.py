@@ -44,10 +44,19 @@ st.session_state.objectifs = df_obj
 # =====================================================
 st.subheader("2️⃣ Mix Segment (%)")
 
+# Mix exacts issus de votre tableau de référence (image_59e874.png)
+# Ordre : Alcomix, BG, BIERES, EAUX, Energy
 if "mix" not in st.session_state:
     st.session_state.mix = pd.DataFrame({
         "Segment": ["Alcomix", "BG", "BIERES", "EAUX", "Energy", "TOTAL"],
-        "2027": [1.00, 27.37, 51.50, 18.59, 1.54, 100.00],
+        "2027": [
+            45969 / 4600000 * 100,    # 1.00 % -> 45 969
+            1258992 / 4600000 * 100,  # 27.37 % -> 1 258 992
+            2369000 / 4600000 * 100,  # 51.50 % -> 2 369 000
+            855039 / 4600000 * 100,   # 18.59 % -> 855 039
+            71000 / 4600000 * 100,    # 1.54 % -> 71 000
+            100.00,
+        ],
         "2028": [1.00, 26.60, 51.50, 19.25, 1.65, 100.00],
         "2029": [1.00, 27.80, 51.50, 18.00, 1.70, 100.00],
         "2030": [1.00, 27.90, 51.50, 17.75, 1.80, 99.95],
@@ -99,7 +108,7 @@ if erreurs_mix:
     )
 else:
     st.success(
-        "✅ **Validation OK :** Tous les totaux du Mix Segment sont conformes (100 %)."
+        "✅ **Validation OK :** Tous les totaux du Mix Segment sont conformes."
     )
 
 # =====================================================
@@ -212,20 +221,20 @@ df_base = pd.DataFrame(
 # =====================================================
 # CALCUL DES POIDS 2027 (MARQUE DANS SEGMENT + SKU DANS MARQUE)
 # =====================================================
-# Volume total par Segment sur la base 2027
+# 1. Volume total de chaque Segment sur la base 2027
 df_base["Vol_Segment_2027"] = df_base.groupby("Segment")["Base_2027"].transform("sum")
 
-# Volume total par Marque (au sein de son Segment) sur la base 2027
+# 2. Volume total de chaque Marque (au sein de son Segment) sur la base 2027
 df_base["Vol_Marque_2027"] = df_base.groupby(["Segment", "Marque"])["Base_2027"].transform("sum")
 
-# 1. Poids de chaque Marque dans son Segment (base 2027)
+# 3. Poids de chaque Marque dans son Segment (base 2027) -> somme = 100% par segment
 df_base["Poids_Marque_2027"] = np.where(
     df_base["Vol_Segment_2027"] > 0,
     df_base["Vol_Marque_2027"] / df_base["Vol_Segment_2027"],
     0.0,
 )
 
-# 2. Poids de chaque SKU dans sa Marque (base 2027)
+# 4. Poids de chaque SKU dans sa Marque (base 2027) -> somme = 100% par marque
 df_base["Poids_SKU_2027"] = np.where(
     df_base["Vol_Marque_2027"] > 0,
     df_base["Base_2027"] / df_base["Vol_Marque_2027"],
@@ -246,15 +255,15 @@ for annee in ANNEES:
         .to_dict()
     )
 
-    # Volume Segment = Objectif Annuel * Mix Segment %
+    # Volume du Segment = Objectif Annuel * Mix Segment (%)
     volume_segment = {seg: (objectif * pct / 100.0) for seg, pct in mix_map.items()}
 
-    # Volume Marque = Volume Segment * Poids Marque 2027
+    # Volume de la Marque = Volume Segment * Poids Marque dans Segment (2027)
     df_detail[f"MARQUE_{annee}"] = (
         df_detail["Segment"].map(volume_segment) * df_detail["Poids_Marque_2027"]
     )
 
-    # Volume SKU = Volume Marque * Poids SKU 2027
+    # Volume du SKU = Volume Marque * Poids SKU dans Marque (2027)
     df_detail[annee] = df_detail[f"MARQUE_{annee}"] * df_detail["Poids_SKU_2027"]
 
 # =====================================================
