@@ -257,12 +257,10 @@ else:
 st.divider()
 st.subheader("3️⃣ Paramétrage des Poids : Marques & Articles (%)")
 
-col_reset1, col_reset2 = st.columns([1, 4])
-with col_reset1:
-    if st.button("🔄 Réinitialiser tous les poids (Base 2027)"):
-        del st.session_state["poids_marques"]
-        del st.session_state["poids_skus"]
-        st.rerun()
+if st.button("🔄 Réinitialiser tous les poids (Base 2027)"):
+    del st.session_state["poids_marques"]
+    del st.session_state["poids_skus"]
+    st.rerun()
 
 tab_pm, tab_ps = st.tabs([
     "🏷️ Poids des Marques dans chaque Segment (%)",
@@ -298,7 +296,6 @@ with tab_pm:
         key="editor_poids_marques",
     )
 
-    # Sauvegarde des modifications dans session_state
     for idx, row in df_pm_edited.iterrows():
         mask = (st.session_state.poids_marques["Segment"] == row["Segment"]) & (
             st.session_state.poids_marques["Marque"] == row["Marque"]
@@ -306,7 +303,6 @@ with tab_pm:
         for annee in ANNEES:
             st.session_state.poids_marques.loc[mask, annee] = row[annee]
 
-    # Validation des sommes à 100 % par Segment et par Année
     erreurs_pm = []
     segs_a_verifier = (
         ORDRE_SEGMENTS if seg_filtre_pm == "Tous les segments" else [seg_filtre_pm]
@@ -327,8 +323,118 @@ with tab_pm:
     else:
         st.success("✅ Somme des poids des marques = 100 % pour chaque segment.")
 
-# --- ONGLET B : POIDS DES ARTICLES (SKU) DANS UNE MARQUE ---
+# --- ONGLET B : POIDS DES ARTICLES (SKU) DANS UNE MARQUE (UPLOAD + MANUEL) ---
 with tab_ps:
+    with st.expander("📤 Importer les poids SKU via fichier (Excel / CSV) — Colonnes : Article | mix", expanded=False):
+        col_up1, col_up2, col_up3 = st.columns([2, 1, 1])
+
+        with col_up1:
+            uploaded_sku_file = st.file_uploader(
+                "Charger un fichier (.xlsx ou .csv) avec 2 colonnes : 'Article' et 'mix'",
+                type=["xlsx", "xls", "csv"],
+                key="upload_sku_mix",
+            )
+
+        with col_up2:
+            cible_annees_upload = st.selectbox(
+                "Appliquer sur :",
+                options=["Toutes les années (2027–2031)"] + ANNEES,
+                key="upload_target_years",
+            )
+
+        with col_up3:
+            # Bouton pour télécharger un modèle Excel prêt à remplir
+            df_template = st.session_state.poids_skus[["SKU", "2027"]].rename(
+                columns={"SKU": "Article", "2027": "mix"}
+            )
+            buf_tpl = io.BytesIO()
+            with pd.ExcelWriter(buf_tpl, engine="openpyxl") as w_tpl:
+                df_template.to_excel(w_tpl, sheet_name="Poids_SKU", index=False)
+            buf_tpl.seek(0)
+            st.write("")
+            st.download_button(
+                "📄 Modèle Excel (.xlsx)",
+                data=buf_tpl,
+                file_name="Modele_Poids_SKU.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        if uploaded_sku_file is not None:
+            if st.button("✅ Appliquer le fichier importé", type="primary", key="btn_apply_upload"):
+                try:
+                    if uploaded_sku_file.name.endswith(".csv"):
+                        try:
+                            df_up = pd.read_csv(uploaded_sku_file, sep=None, engine="python")
+                        except Exception:
+                            uploaded_sku_file.seek(0)
+                            df_up = pd.read_csv(uploaded_sku_file, sep=";")
+                    else:
+                        df_up = pd.read_excel(uploaded_sku_file)
+
+                    # Normalisation des noms de colonnes (insensible à la casse / espaces)
+                    cols_norm = {str(c).strip().lower(): c for c in df_up.columns}
+                    if "article" not in cols_norm or "mix" not in cols_norm:
+                        st.error(
+                            f"❌ Colonnes attendues : **Article** et **mix**. Colonnes trouvées : {list(df_up.columns)}"
+                        )
+                    else:
+                        col_art = cols_norm["article"]
+                        col_mix = cols_norm["mix"]
+
+                        df_up_clean = df_up[[col_art, col_mix]].dropna(subset=[col_art]).copy()
+                        df_up_clean["Article_clean"] = df_up_clean[col_art].astype(str).str.strip()
+
+                        # Nettoyage des valeurs numériques (gestion virgule, symbole %, ou décimal 0..1)
+                        def parse_mix_val(v):
+                            if pd.isna(v):
+                                return np.nan
+                            if isinstance(v, str):
+                                s = v.replace("%", "").replace(",", ".").strip()
+                                val = float(s)
+                            else:
+                                val = float(v)
+                            return val
+
+                        df_up_clean["mix_num"] = df_up_clean[col_mix].apply(parse_mix_val)
+
+                        # Si toutes les valeurs sont <= 1.0 (format ratio Excel 0.45 pour 45%), convertir en %
+                        if df_up_clean["mix_num"].max() <= 1.0 and df_up_clean["mix_num"].sum() > 0:
+                            df_up_clean["mix_num"] = df_up_clean["mix_num"] * 100.0
+
+                        annees_cibles = (
+                            ANNEES
+                            if cible_annees_upload == "Toutes les années (2027–2031)"
+                            else [cible_annees_upload]
+                        )
+
+                        skus_connus = set(st.session_state.poids_skus["SKU"].str.strip())
+                        nb_maj = 0
+                        non_trouves = []
+
+                        for _, r_up in df_up_clean.iterrows():
+                            art = r_up["Article_clean"]
+                            val_m = r_up["mix_num"]
+                            if pd.isna(val_m):
+                                continue
+                            if art in skus_connus:
+                                mask_sku = st.session_state.poids_skus["SKU"].str.strip() == art
+                                for a_cible in annees_cibles:
+                                    st.session_state.poids_skus.loc[mask_sku, a_cible] = val_m
+                                nb_maj += 1
+                            else:
+                                non_trouves.append(art)
+
+                        st.success(
+                            f"✅ **{nb_maj} article(s)** mis à jour sur **{cible_annees_upload}**."
+                        )
+                        if non_trouves:
+                            st.warning(
+                                f"⚠️ {len(non_trouves)} article(s) non reconnu(s) ignoré(s) : {', '.join(non_trouves[:10])}"
+                            )
+                except Exception as e:
+                    st.error(f"❌ Erreur lors de la lecture du fichier : {e}")
+
+    st.markdown("**Édition manuelle des poids SKU (%) :**")
     col_f1, col_f2 = st.columns(2)
     with col_f1:
         seg_filtre_ps = st.selectbox(
@@ -373,7 +479,6 @@ with tab_ps:
         key="editor_poids_skus",
     )
 
-    # Sauvegarde des modifications dans session_state
     for idx, row in df_ps_edited.iterrows():
         mask = (
             (st.session_state.poids_skus["Segment"] == row["Segment"])
@@ -383,7 +488,6 @@ with tab_ps:
         for annee in ANNEES:
             st.session_state.poids_skus.loc[mask, annee] = row[annee]
 
-    # Validation des sommes à 100 % pour la Marque sélectionnée
     erreurs_ps = []
     sub_ps = st.session_state.poids_skus[
         (st.session_state.poids_skus["Segment"] == seg_filtre_ps)
@@ -391,7 +495,6 @@ with tab_ps:
     ]
     for annee in ANNEES:
         somme_sku = sub_ps[annee].sum()
-        # Si la marque a un poids > 0 cette année-là, la somme de ses SKU doit valoir 100 %
         poids_m = st.session_state.poids_marques.loc[
             (st.session_state.poids_marques["Segment"] == seg_filtre_ps)
             & (st.session_state.poids_marques["Marque"] == marque_filtre_ps),
@@ -414,7 +517,6 @@ with tab_ps:
 # =====================================================
 df_detail = df_base[["Segment", "Marque", "SKU", "2026"]].copy()
 
-# Fusion des poids marques et poids SKUs dynamiques (convertis de % en ratio)
 pm_renamed = st.session_state.poids_marques.rename(
     columns={a: f"PM_{a}" for a in ANNEES}
 )
@@ -444,17 +546,26 @@ for annee in ANNEES:
     )
 
 # =====================================================
-# GRAPHIQUES D'EVOLUTION
+# GRAPHIQUES D'EVOLUTION (VOLUMES & MIX % PAR AN)
 # =====================================================
 st.divider()
 st.subheader("📊 Visualisation des Évolutions (2026–2031)")
-
-col_g1, col_g2 = st.columns(2)
 
 df_chart_seg = df_detail.groupby("Segment", as_index=False)[ANNEES_ALL].sum()
 df_chart_seg_melt = df_chart_seg.melt(
     id_vars="Segment", var_name="Année", value_name="Volume"
 )
+
+# Calcul du Mix réel (%) par Segment et par Année (y compris 2026)
+totaux_annuels = df_chart_seg_melt.groupby("Année")["Volume"].transform("sum")
+df_chart_seg_melt["Mix (%)"] = np.where(
+    totaux_annuels > 0,
+    (df_chart_seg_melt["Volume"] / totaux_annuels) * 100.0,
+    0.0,
+)
+
+# Ligne 1 : Graphiques Volumes
+col_g1, col_g2 = st.columns(2)
 
 with col_g1:
     fig_bar = px.bar(
@@ -475,10 +586,44 @@ with col_g2:
         y="Volume",
         color="Segment",
         markers=True,
-        title="Trajectoire de Croissance par Segment",
+        title="Trajectoire de Croissance des Volumes par Segment",
     )
     fig_line.update_layout(yaxis_title="Volume", xaxis_title="Année")
     st.plotly_chart(fig_line, use_container_width=True)
+
+# Ligne 2 : Graphiques Évolution du Mix (%) par an
+col_m1, col_m2 = st.columns(2)
+
+with col_m1:
+    fig_mix_bar = px.bar(
+        df_chart_seg_melt,
+        x="Année",
+        y="Mix (%)",
+        color="Segment",
+        title="Évolution du Mix Segment (%) par An (Base 100 %)",
+        text=df_chart_seg_melt["Mix (%)"].apply(lambda x: f"{x:.1f}%"),
+    )
+    fig_mix_bar.update_traces(textposition="inside")
+    fig_mix_bar.update_layout(
+        yaxis_title="Part de Mix (%)",
+        xaxis_title="Année",
+        yaxis=dict(range=[0, 100]),
+    )
+    st.plotly_chart(fig_mix_bar, use_container_width=True)
+
+with col_m2:
+    fig_mix_line = px.line(
+        df_chart_seg_melt,
+        x="Année",
+        y="Mix (%)",
+        color="Segment",
+        markers=True,
+        title="Évolution Comparative des Parts de Mix (%) par Segment",
+        text=df_chart_seg_melt["Mix (%)"].apply(lambda x: f"{x:.1f}%"),
+    )
+    fig_mix_line.update_traces(textposition="top center")
+    fig_mix_line.update_layout(yaxis_title="Part de Mix (%)", xaxis_title="Année")
+    st.plotly_chart(fig_mix_line, use_container_width=True)
 
 # =====================================================
 # RENDU HTML AVEC FUSION VERTICALE SUR SEGMENT ET MARQUE
