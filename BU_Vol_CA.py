@@ -10,7 +10,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 # =====================================================
 st.set_page_config(page_title="Simulateur S&OP", page_icon="📈", layout="wide")
 
-st.title("📈 Simulateur S&OP — Prévisions 2026–2031")
+st.title("📈 Simulateur S&OP — BUDGET 2026–2031")
 
 ANNEES = ["2027", "2028", "2029", "2030", "2031"]
 ANNEES_ALL = ["2026"] + ANNEES
