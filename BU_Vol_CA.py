@@ -17,7 +17,7 @@ ANNEES_ALL = ["2026"] + ANNEES
 ORDRE_SEGMENTS = ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]
 
 # =====================================================
-# BASE DETAILLEE : VOLUMES 2026, BASE POIDS 2027 & PRIX 2026
+# BASE DETAILLEE : VOLUMES 2026, BASE POIDS 2027 & PRIX 2026 FIXE
 # =====================================================
 detail = [
     # ALCOMIX
@@ -119,7 +119,7 @@ detail = [
 ]
 
 df_base = pd.DataFrame(
-    detail, columns=["Segment", "Marque", "SKU", "2026", "Base_2027", "Prix_2026_Init"]
+    detail, columns=["Segment", "Marque", "SKU", "2026", "Base_2027", "Prix_2026_Fixe"]
 )
 
 # Calcul des poids initiaux 2027 (en %)
@@ -182,7 +182,7 @@ if "poids_skus" not in st.session_state:
 if "prix_skus" not in st.session_state:
     df_prix_init = df_base[["Segment", "Marque", "SKU"]].copy()
     for annee in ANNEES_ALL:
-        df_prix_init[annee] = df_base["Prix_2026_Init"].astype(float)
+        df_prix_init[annee] = df_base["Prix_2026_Fixe"].astype(float)
     st.session_state.prix_skus = df_prix_init
 
 # =====================================================
@@ -941,31 +941,31 @@ with onglet_vol:
 # ONGLET 2 : CALCUL CHIFFRE D'AFFAIRES (CA)
 # #####################################################
 with onglet_ca:
-    st.subheader("1️⃣ Gestion des Prix Unitaires (2026–2031)")
+    st.subheader("1️⃣ Gestion des Prix Unitaires (2026 fixé — Upload & Édition sur 2027 → 2031)")
 
     col_p_reset, _ = st.columns([1, 4])
     with col_p_reset:
-        if st.button("🔄 Réinitialiser les prix (Base 2026)", key="btn_reset_prix"):
+        if st.button("🔄 Réinitialiser les prix 2027–2031 (Base 2026)", key="btn_reset_prix"):
             del st.session_state["prix_skus"]
             st.rerun()
 
-    # UPLOAD DES PRIX (2026 ET AUTRES ANNÉES)
+    # UPLOAD DES PRIX UNIQUEMENT POUR 2027 -> 2031
     with st.expander(
-        "📤 Importer les Prix via fichier (Excel / CSV) — 2026 et autres années",
+        "📤 Importer les Prix via fichier (Excel / CSV) — Période 2027 → 2031 uniquement",
         expanded=True,
     ):
         st.markdown(
             """
-            **Formats acceptés :**
-            * **Format 2 colonnes** : `Article` | `Prix` (ou `mix` / `Tarif`) → applique le prix à l'année sélectionnée ci-contre (ou à toutes les années).
-            * **Format multi-années** : `Article` | `2026` | `2027` | `2028` | `2029` | `2030` | `2031` → met à jour directement chaque colonne d'année présente dans le fichier.
+            **Le prix 2026 est déjà fixé.** L'import met à jour uniquement les années **2027 à 2031** :
+            * **Format 2 colonnes** : `Article` | `Prix` → applique le prix à l'année sélectionnée (`2027` à `2031`) ou à toutes les années `2027 → 2031`.
+            * **Format multi-années** : `Article` | `2027` | `2028` | `2029` | `2030` | `2031` → met à jour directement chaque colonne d'année correspondante.
             """
         )
         col_up_p1, col_up_p2, col_up_p3 = st.columns([2, 1, 1])
 
         with col_up_p1:
             uploaded_prix_file = st.file_uploader(
-                "Charger le fichier des Prix (.xlsx ou .csv)",
+                "Charger le fichier des Prix 2027–2031 (.xlsx ou .csv)",
                 type=["xlsx", "xls", "csv"],
                 key="upload_prix_file",
             )
@@ -973,30 +973,29 @@ with onglet_ca:
         with col_up_p2:
             cible_annees_prix = st.selectbox(
                 "Si fichier 2 colonnes, appliquer sur :",
-                options=["Toutes les années (2026–2031)"] + ANNEES_ALL,
+                options=["Toutes les années (2027–2031)"] + ANNEES,
                 key="upload_prix_target",
             )
 
-        with col_up3:
-            # Modèle Excel contenant les prix 2026–2031 prêts à remplir
-            df_tpl_prix = st.session_state.prix_skus[["SKU"] + ANNEES_ALL].rename(
+        with col_up_p3:
+            df_tpl_prix = st.session_state.prix_skus[["SKU"] + ANNEES].rename(
                 columns={"SKU": "Article"}
             )
             buf_tpl_p = io.BytesIO()
             with pd.ExcelWriter(buf_tpl_p, engine="openpyxl") as w_p:
-                df_tpl_prix.to_excel(w_p, sheet_name="Modele_Prix", index=False)
+                df_tpl_prix.to_excel(w_p, sheet_name="Modele_Prix_2027_2031", index=False)
             buf_tpl_p.seek(0)
             st.write("")
             st.download_button(
-                "📄 Modèle Prix (.xlsx)",
+                "📄 Modèle Prix 2027–2031 (.xlsx)",
                 data=buf_tpl_p,
-                file_name="Modele_Prix_SKU_2026_2031.xlsx",
+                file_name="Modele_Prix_SKU_2027_2031.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="dl_tpl_prix",
             )
 
         if uploaded_prix_file is not None:
-            if st.button("✅ Appliquer les Prix importés", type="primary", key="btn_apply_prix"):
+            if st.button("✅ Appliquer les Prix importés (2027–2031)", type="primary", key="btn_apply_prix"):
                 try:
                     if uploaded_prix_file.name.endswith(".csv"):
                         try:
@@ -1037,9 +1036,9 @@ with onglet_ca:
                                 return float(s) if s != "" else np.nan
                             return float(v)
 
-                        # Détection si colonnes d'années présentes (ex: 2026, 2027...)
+                        # On filtre uniquement sur les colonnes 2027 -> 2031 (2026 est ignoré car fixé)
                         annees_dans_fichier = [
-                            a for a in ANNEES_ALL if a in cols_norm_p
+                            a for a in ANNEES if a in cols_norm_p
                         ]
 
                         skus_connus_p = set(st.session_state.prix_skus["SKU"].str.strip())
@@ -1060,10 +1059,9 @@ with onglet_ca:
                                     non_trouves_p.append(art)
 
                             st.success(
-                                f"✅ **{nb_maj_p} article(s)** mis à jour sur les années : {', '.join(annees_dans_fichier)}."
+                                f"✅ **{nb_maj_p} article(s)** mis à jour sur : {', '.join(annees_dans_fichier)} (2026 conservé tel quel)."
                             )
                         else:
-                            # Mode 2 colonnes : Article + colonne valeur (Prix / Tarif / Mix / 2e colonne)
                             col_val_key = next(
                                 (
                                     k
@@ -1082,8 +1080,8 @@ with onglet_ca:
 
                             if col_val_p is not None:
                                 annees_cibles_p = (
-                                    ANNEES_ALL
-                                    if cible_annees_prix == "Toutes les années (2026–2031)"
+                                    ANNEES
+                                    if cible_annees_prix == "Toutes les années (2027–2031)"
                                     else [cible_annees_prix]
                                 )
                                 for _, r_p in df_p_up.iterrows():
@@ -1110,7 +1108,7 @@ with onglet_ca:
                 except Exception as e:
                     st.error(f"❌ Erreur lors de la lecture du fichier de prix : {e}")
 
-    # ÉDITION MANUELLE DES PRIX PAR SEGMENT
+    # ÉDITION MANUELLE DES PRIX (2026 VERROUILLÉ, 2027-2031 ÉDITABLE)
     seg_filtre_prix = st.selectbox(
         "🔍 Filtrer la grille des Prix par Segment :",
         options=["Tous les segments"] + ORDRE_SEGMENTS,
@@ -1125,8 +1123,11 @@ with onglet_ca:
         "Segment": st.column_config.TextColumn("Segment", disabled=True),
         "Marque": st.column_config.TextColumn("Marque", disabled=True),
         "SKU": st.column_config.TextColumn("Article (SKU)", disabled=True),
+        "2026": st.column_config.NumberColumn(
+            "Prix 2026 (Fixé)", format="%.0f", disabled=True
+        ),
     }
-    for annee in ANNEES_ALL:
+    for annee in ANNEES:
         col_cfg_prix[annee] = st.column_config.NumberColumn(
             f"Prix {annee}", format="%.0f", min_value=0.0, step=10.0
         )
@@ -1146,11 +1147,11 @@ with onglet_ca:
             & (st.session_state.prix_skus["Marque"] == row["Marque"])
             & (st.session_state.prix_skus["SKU"] == row["SKU"])
         )
-        for annee in ANNEES_ALL:
+        for annee in ANNEES:
             st.session_state.prix_skus.loc[mask, annee] = row[annee]
 
     # =====================================================
-    # CALCUL DU CHIFFRE D'AFFAIRES (CA = VOLUME * PRIX)
+    # CALCUL DU CHIFFRE D'AFFAIRES : CA = VOLUME * PRIX UNITAIRE
     # =====================================================
     df_ca = df_detail[["Segment", "Marque", "SKU"]].copy()
     for annee in ANNEES_ALL:
