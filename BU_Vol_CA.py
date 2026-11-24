@@ -13,18 +13,18 @@ st.set_page_config(page_title="Simulateur S&OP & CA", page_icon="📈", layout="
 st.markdown(
     """
     <style>
-    /* Barre supérieure Streamlit transparente / discrète */
+    /* Barre supérieure Streamlit transparente et au-dessus */
     header[data-testid="stHeader"] {
         background: transparent !important;
-        z-index: 1002 !important;
+        z-index: 1003 !important;
     }
 
-    /* Espace haut de page ajusté pour accueillir le bandeau fixe */
-    .block-container {
-        padding-top: 7.2rem !important;
+    /* Marge supérieure du contenu principal pour ne pas être masqué par l'en-tête et les onglets fixes */
+    [data-testid="stAppViewContainer"] .block-container {
+        padding-top: 7.5rem !important;
     }
 
-    /* Bandeau titre fixé en haut de l'écran */
+    /* Bandeau titre fixé tout en haut */
     .fixed-top-header {
         position: fixed;
         top: 0;
@@ -32,31 +32,40 @@ st.markdown(
         right: 0;
         height: 4.1rem;
         background-color: var(--background-color, #ffffff);
-        z-index: 1000;
+        z-index: 1001;
         display: flex;
         align-items: center;
         padding: 0 3rem;
-        border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+        border-bottom: 1px solid rgba(128, 128, 128, 0.15);
     }
     .fixed-top-header h1 {
         margin: 0 !important;
         padding: 0 !important;
-        font-size: 1.65rem !important;
+        font-size: 1.6rem !important;
         font-weight: 700 !important;
         color: var(--text-color, #1a1a1a);
     }
 
-    /* Barre des onglets principaux fixée juste sous le bandeau titre */
-    section.main div[data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] {
+    /* Barre d'onglets principaux fixée juste sous le bandeau titre */
+    [data-testid="stAppViewContainer"] [data-testid="stTabs"] > div[data-baseweb="tab-list"] {
         position: fixed !important;
         top: 4.1rem !important;
         left: 0 !important;
         right: 0 !important;
         background-color: var(--background-color, #ffffff) !important;
-        z-index: 999 !important;
+        z-index: 1000 !important;
         padding: 0.35rem 3rem 0 3rem !important;
         border-bottom: 2px solid rgba(128, 128, 128, 0.25) !important;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+    }
+
+    /* Annule le position:fixed pour les sous-onglets imbriqués */
+    [data-testid="stAppViewContainer"] [data-testid="stTabs"] [data-testid="stTabs"] > div[data-baseweb="tab-list"] {
+        position: static !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border-bottom: 1px solid rgba(128, 128, 128, 0.2) !important;
+        z-index: 1 !important;
     }
     </style>
 
@@ -236,7 +245,6 @@ if "poids_skus" not in st.session_state:
         df_ps_init[annee] = df_ps_init["Poids_SKU_Init"]
     st.session_state.poids_skus = df_ps_init.drop(columns=["Poids_SKU_Init"])
 
-# Vérification que toutes les colonnes attendues existent dans prix_skus (évite tout KeyError après mise à jour)
 colonnes_prix_attendues = ["Segment", "Marque", "SKU", "Contenance_hl"] + ANNEES_ALL
 if (
     "prix_skus" not in st.session_state
@@ -248,12 +256,31 @@ if (
     st.session_state.prix_skus = df_prix_init
 
 # =====================================================
-# FONCTIONS COMMUNES (FORMATAGE, RENDU HTML FUSIONNÉ, EXCEL)
+# FONCTIONS COMMUNES (FORMATAGE, TAUX ÉVO, HTML FUSIONNÉ, EXCEL)
 # =====================================================
 def fmt_val(val):
     if pd.isna(val) or val == 0:
         return "-"
     return f"{val:,.0f}".replace(",", " ")
+
+
+def calculer_taux_evolution(df_agg, id_cols):
+    """Calcule le taux de croissance annuel (%) de 2027 à 2031 vs N-1."""
+    rows = []
+    for _, r in df_agg.iterrows():
+        for i in range(1, len(ANNEES_ALL)):
+            an_curr = ANNEES_ALL[i]
+            an_prev = ANNEES_ALL[i - 1]
+            v_curr = r[an_curr]
+            v_prev = r[an_prev]
+            taux = ((v_curr - v_prev) / v_prev * 100.0) if v_prev > 0 else np.nan
+            item = {col: r[col] for col in id_cols}
+            item["Année"] = an_curr
+            item["Taux Évo (%)"] = taux
+            item["Label (%)"] = f"{taux:+.1f}%" if not pd.isna(taux) else "N/A"
+            rows.append(item)
+    return pd.DataFrame(rows)
+
 
 def generer_html_fusionne(df_source, cols_annees, segments_cibles):
     df_sub = df_source[df_source["Segment"].isin(segments_cibles)]
@@ -1239,7 +1266,7 @@ with onglet_ca:
             delta_pct = ((ca_tot - ca_prev) / ca_prev * 100.0) if ca_prev > 0 else 0.0
             cols_kpi[i].metric(f"CA {annee}", fmt_val(ca_tot), f"{delta_pct:+.1f}%")
 
-    # GRAPHIQUES CA
+    # GRAPHIQUES CA VALEUR & MIX %
     df_chart_ca = df_ca.groupby("Segment", as_index=False)[ANNEES_ALL].sum()
     df_chart_ca_melt = df_chart_ca.melt(
         id_vars="Segment", var_name="Année", value_name="Chiffre d'Affaires"
@@ -1280,6 +1307,88 @@ with onglet_ca:
             yaxis=dict(range=[0, 100]),
         )
         st.plotly_chart(fig_ca_mix, use_container_width=True)
+
+    # =====================================================
+    # GRAPHIQUES TAUX D'ÉVOLUTION CA (%) : GLOBAL, SEGMENT, MARQUE
+    # =====================================================
+    st.divider()
+    st.subheader("📈 Taux d'Évolution Annuel du Chiffre d'Affaires (% vs N-1)")
+
+    # 1. Global & Par Segment
+    df_ca_global = pd.DataFrame([{"Périmètre": "CA Global", **{a: df_ca[a].sum() for a in ANNEES_ALL}}])
+    df_evo_global = calculer_taux_evolution(df_ca_global, ["Périmètre"])
+    df_evo_seg = calculer_taux_evolution(df_chart_ca, ["Segment"])
+
+    col_evo1, col_evo2 = st.columns(2)
+
+    with col_evo1:
+        fig_evo_global = px.bar(
+            df_evo_global,
+            x="Année",
+            y="Taux Évo (%)",
+            text="Label (%)",
+            title="Taux d'Évolution du CA Global (% / an)",
+            color="Taux Évo (%)",
+            color_continuous_scale=["#d9534f", "#f0ad4e", "#2e7d32"],
+        )
+        fig_evo_global.add_hline(y=0, line_dash="dash", line_color="gray")
+        fig_evo_global.update_traces(textposition="outside")
+        fig_evo_global.update_layout(
+            yaxis_title="Croissance CA (%)",
+            xaxis_title="Année",
+            coloraxis_showscale=False,
+        )
+        st.plotly_chart(fig_evo_global, use_container_width=True)
+
+    with col_evo2:
+        fig_evo_seg = px.line(
+            df_evo_seg,
+            x="Année",
+            y="Taux Évo (%)",
+            color="Segment",
+            markers=True,
+            text="Label (%)",
+            title="Taux d'Évolution du CA par Segment (% / an)",
+        )
+        fig_evo_seg.add_hline(y=0, line_dash="dash", line_color="gray")
+        fig_evo_seg.update_traces(textposition="top center")
+        fig_evo_seg.update_layout(
+            yaxis_title="Croissance CA (%)",
+            xaxis_title="Année",
+        )
+        st.plotly_chart(fig_evo_seg, use_container_width=True)
+
+    # 2. Par Marque (avec filtre segment pour lisibilité)
+    seg_filtre_evo_marque = st.selectbox(
+        "🔍 Filtrer les Marques affichées sur le graphique d'évolution :",
+        options=["Tous les segments"] + ORDRE_SEGMENTS,
+        key="sel_seg_evo_marque",
+    )
+
+    df_ca_marque = df_ca.groupby(["Segment", "Marque"], as_index=False)[ANNEES_ALL].sum()
+    if seg_filtre_evo_marque != "Tous les segments":
+        df_ca_marque = df_ca_marque[df_ca_marque["Segment"] == seg_filtre_evo_marque]
+
+    df_evo_marque = calculer_taux_evolution(df_ca_marque, ["Segment", "Marque"])
+
+    fig_evo_marque = px.line(
+        df_evo_marque,
+        x="Année",
+        y="Taux Évo (%)",
+        color="Marque",
+        markers=True,
+        text="Label (%)" if seg_filtre_evo_marque != "Tous les segments" else None,
+        title=f"Taux d'Évolution du CA par Marque (% / an) — {seg_filtre_evo_marque}",
+        hover_data={"Segment": True, "Taux Évo (%)": ":.2f", "Label (%)": False},
+    )
+    fig_evo_marque.add_hline(y=0, line_dash="dash", line_color="gray")
+    if seg_filtre_evo_marque != "Tous les segments":
+        fig_evo_marque.update_traces(textposition="top center")
+    fig_evo_marque.update_layout(
+        yaxis_title="Croissance CA (%)",
+        xaxis_title="Année",
+    )
+    st.plotly_chart(fig_evo_marque, use_container_width=True)
 
     # TABLEAU HIÉRARCHIQUE CA FUSIONNÉ
     st.divider()
