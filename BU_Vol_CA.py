@@ -6,120 +6,161 @@ import streamlit as st
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 # =====================================================
-# CONFIGURATION
+# CONFIGURATION & CSS EN-TÊTE FIGÉE (TITRE + ONGLETS)
 # =====================================================
 st.set_page_config(page_title="Simulateur S&OP & CA", page_icon="📈", layout="wide")
 
-st.title("📈 Simulateur S&OP — Volumes & Chiffre d'Affaires (2026–2031)")
+st.markdown(
+    """
+    <style>
+    /* Réduction de la marge haute du conteneur principal */
+    .block-container {
+        padding-top: 2.5rem !important;
+    }
+
+    /* Bloc titre figé en haut sous la barre Streamlit */
+    .sticky-main-header {
+        position: sticky;
+        top: 2.85rem;
+        z-index: 999;
+        background-color: var(--background-color, #ffffff);
+        padding: 8px 0 6px 0;
+        border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+    }
+    .sticky-main-header h1 {
+        margin: 0 !important;
+        padding: 0 !important;
+        font-size: 1.85rem !important;
+        line-height: 1.3 !important;
+    }
+
+    /* Barre des onglets principaux figée juste sous le titre */
+    div[data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] {
+        position: sticky;
+        top: 6.1rem;
+        z-index: 998;
+        background-color: var(--background-color, #ffffff);
+        padding-top: 4px;
+        border-bottom: 2px solid rgba(128, 128, 128, 0.2);
+    }
+    </style>
+    <div class="sticky-main-header">
+        <h1>📈 Simulateur S&amp;OP — Volumes &amp; Chiffre d'Affaires (2026–2031)</h1>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 ANNEES = ["2027", "2028", "2029", "2030", "2031"]
 ANNEES_ALL = ["2026"] + ANNEES
 ORDRE_SEGMENTS = ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]
 
 # =====================================================
-# BASE DETAILLEE : VOLUMES 2026, BASE POIDS 2027 & PRIX 2026 FIXE
+# BASE DETAILLEE :
+# [Segment, Marque, SKU, Vol_2026_hl, Base_2027_hl, Prix_2026_Fixe, Contenance_hl]
 # =====================================================
 detail = [
     # ALCOMIX
-    ["Alcomix", "Booster", "Booster Appel-Mix 50CL VER", 21855, 26734, 3250],
-    ["Alcomix", "Booster", "Booster Tornado 50CL VER VER", 15616, 19234, 3250],
-    ["Alcomix", "BOTA Fresh", "BOTA Fresh 50 cl VER", 1005, 0, 3225],
-    ["Alcomix", "Racines", "Racines 33 cl VER", 2220, 0, 2170],
+    ["Alcomix", "Booster", "Booster Appel-Mix 50CL VER", 21855, 26734, 3250, 0.005],
+    ["Alcomix", "Booster", "Booster Tornado 50CL VER VER", 15616, 19234, 3250, 0.005],
+    ["Alcomix", "BOTA Fresh", "BOTA Fresh 50 cl VER", 1005, 0, 3225, 0.005],
+    ["Alcomix", "Racines", "Racines 33 cl VER", 2220, 0, 2170, 0.0033],
     # BG - CAPRICE
-    ["BG", "Caprice", "Caprice Ananas 100 cl VER", 4386, 4614, 2180],
-    ["BG", "Caprice", "Caprice Ananas 150 cl PET", 22050, 22156, 3650],
-    ["BG", "Caprice", "Caprice Ananas 30 cl VER", 4496, 4677, 875],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 100 cl VER", 57580, 57543, 2180],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 150 cl PET", 308042, 311325, 3650],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 20L FUT", 79, 76, 54170],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 30 cl VER", 41261, 41451, 875],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 33 cl CAN", 4990, 5872, 1850],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 35 cl PET", 19424, 20125, 1080],
-    ["BG", "Caprice", "Caprice Bonbon Anglais 50 cl PET", 137932, 143586, 1465],
-    ["BG", "Caprice", "Caprice Grenadine 100 cl VER", 11739, 13276, 2180],
-    ["BG", "Caprice", "Caprice Grenadine 150 cl PET", 34088, 35314, 3650],
-    ["BG", "Caprice", "Caprice Grenadine 30 cl VER", 4720, 4988, 875],
-    ["BG", "Caprice", "Caprice Grenadine 33 cl CAN", 2897, 3445, 1850],
-    ["BG", "Caprice", "Caprice Grenadine 35 cl PET", 1886, 3514, 1080],
-    ["BG", "Caprice", "Caprice Grenadine 50 cl PET", 11792, 13307, 1465],
-    ["BG", "Caprice", "Caprice Orange 100 cl VER", 33262, 34726, 2180],
-    ["BG", "Caprice", "Caprice Orange 150 cl PET", 161382, 172106, 3650],
-    ["BG", "Caprice", "Caprice Orange 20L FUT", 75, 76, 54170],
-    ["BG", "Caprice", "Caprice Orange 30 cl VER", 26172, 26934, 875],
-    ["BG", "Caprice", "Caprice Orange 33 cl CAN", 3875, 4631, 1850],
-    ["BG", "Caprice", "Caprice Orange 35 cl PET", 5943, 5583, 1080],
-    ["BG", "Caprice", "Caprice Orange 50 cl PET", 59297, 61398, 1465],
-    ["BG", "Caprice", "Caprice Pomme 100 cl VER", 958, 0, 2180],
-    ["BG", "Caprice", "Caprice Pomme 150 cl PET", 4128, 0, 3650],
-    ["BG", "Caprice", "Caprice Pomme 30 cl VER", 1595, 0, 875],
-    ["BG", "Caprice", "Caprice Pomme 50 cl PET", 0, 0, 0],
+    ["BG", "Caprice", "Caprice Ananas 100 cl VER", 4386, 4614, 2180, 0.01],
+    ["BG", "Caprice", "Caprice Ananas 150 cl PET", 22050, 22156, 3650, 0.015],
+    ["BG", "Caprice", "Caprice Ananas 30 cl VER", 4496, 4677, 875, 0.003],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 100 cl VER", 57580, 57543, 2180, 0.01],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 150 cl PET", 308042, 311325, 3650, 0.015],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 20L FUT", 79, 76, 54170, 0.2],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 30 cl VER", 41261, 41451, 875, 0.003],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 33 cl CAN", 4990, 5872, 1850, 0.0033],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 35 cl PET", 19424, 20125, 1080, 0.0035],
+    ["BG", "Caprice", "Caprice Bonbon Anglais 50 cl PET", 137932, 143586, 1465, 0.005],
+    ["BG", "Caprice", "Caprice Grenadine 100 cl VER", 11739, 13276, 2180, 0.01],
+    ["BG", "Caprice", "Caprice Grenadine 150 cl PET", 34088, 35314, 3650, 0.015],
+    ["BG", "Caprice", "Caprice Grenadine 30 cl VER", 4720, 4988, 875, 0.003],
+    ["BG", "Caprice", "Caprice Grenadine 33 cl CAN", 2897, 3445, 1850, 0.0033],
+    ["BG", "Caprice", "Caprice Grenadine 35 cl PET", 1886, 3514, 1080, 0.0035],
+    ["BG", "Caprice", "Caprice Grenadine 50 cl PET", 11792, 13307, 1465, 0.005],
+    ["BG", "Caprice", "Caprice Orange 100 cl VER", 33262, 34726, 2180, 0.01],
+    ["BG", "Caprice", "Caprice Orange 150 cl PET", 161382, 172106, 3650, 0.015],
+    ["BG", "Caprice", "Caprice Orange 20L FUT", 75, 76, 54170, 0.2],
+    ["BG", "Caprice", "Caprice Orange 30 cl VER", 26172, 26934, 875, 0.003],
+    ["BG", "Caprice", "Caprice Orange 33 cl CAN", 3875, 4631, 1850, 0.0033],
+    ["BG", "Caprice", "Caprice Orange 35 cl PET", 5943, 5583, 1080, 0.0035],
+    ["BG", "Caprice", "Caprice Orange 50 cl PET", 59297, 61398, 1465, 0.005],
+    ["BG", "Caprice", "Caprice Pomme 100 cl VER", 958, 0, 2180, 0.01],
+    ["BG", "Caprice", "Caprice Pomme 150 cl PET", 4128, 0, 3650, 0.015],
+    ["BG", "Caprice", "Caprice Pomme 30 cl VER", 1595, 0, 875, 0.003],
+    ["BG", "Caprice", "Caprice Pomme 50 cl PET", 0, 0, 0, 0.005],
     # BG - TONIC
-    ["BG", "Tonic", "Tonic 100 cl VER", 7958, 8472, 2180],
-    ["BG", "Tonic", "Tonic 30 cl VER", 17921, 19010, 875],
+    ["BG", "Tonic", "Tonic 100 cl VER", 7958, 8472, 2180, 0.01],
+    ["BG", "Tonic", "Tonic 30 cl VER", 17921, 19010, 875, 0.003],
     # BG - WORLD COLA
-    ["BG", "World Cola", "World Cola 100cl VER", 4368, 4251, 2180],
-    ["BG", "World Cola", "World Cola 100cl WOCO VER", 24276, 21268, 2180],
-    ["BG", "World Cola", "World Cola 150cl PET", 100927, 101951, 3650],
-    ["BG", "World Cola", "World Cola 30cl VER", 1967, 2232, 875],
-    ["BG", "World Cola", "World Cola 30cl WOCO VER", 26387, 27030, 875],
-    ["BG", "World Cola", "World Cola 33 cl CAN", 2832, 3192, 1850],
-    ["BG", "World Cola", "World Cola 35cl PET", 6866, 8700, 1080],
-    ["BG", "World Cola", "World Cola 50cl PET", 54263, 57596, 1465],
-    ["BG", "World Cola", "World Cola 20L FUT", 281, 272, 54170],
+    ["BG", "World Cola", "World Cola 100cl VER", 4368, 4251, 2180, 0.01],
+    ["BG", "World Cola", "World Cola 100cl WOCO VER", 24276, 21268, 2180, 0.01],
+    ["BG", "World Cola", "World Cola 150cl PET", 100927, 101951, 3650, 0.015],
+    ["BG", "World Cola", "World Cola 30cl VER", 1967, 2232, 875, 0.003],
+    ["BG", "World Cola", "World Cola 30cl WOCO VER", 26387, 27030, 875, 0.003],
+    ["BG", "World Cola", "World Cola 33 cl CAN", 2832, 3192, 1850, 0.0033],
+    ["BG", "World Cola", "World Cola 35cl PET", 6866, 8700, 1080, 0.0035],
+    ["BG", "World Cola", "World Cola 50cl PET", 54263, 57596, 1465, 0.005],
+    ["BG", "World Cola", "World Cola 20L FUT", 281, 272, 54170, 0.2],
     # BIERES - BEAUFORT
-    ["BIERES", "Beaufort", "Beaufort 33 CL CAN", 13986, 14650, 3800],
-    ["BIERES", "Beaufort", "Beaufort 33CL VER", 34851, 36111, 2900],
+    ["BIERES", "Beaufort", "Beaufort 33 CL CAN", 13986, 14650, 3800, 0.0033],
+    ["BIERES", "Beaufort", "Beaufort 33CL VER", 34851, 36111, 2900, 0.0033],
     # BIERES - FRESH
-    ["BIERES", "FRESH", "FRESH 33 cl CAN", 3254, 3771, 2650],
-    ["BIERES", "FRESH", "FRESH 33 cl EXPORT CAN", 25, 0, 2107],
-    ["BIERES", "FRESH", "THB Fresh 33 cl VER", 1881, 2058, 1900],
-    ["BIERES", "FRESH", "THB Fresh 65 cl VER", 35712, 38200, 3000],
+    ["BIERES", "FRESH", "FRESH 33 cl CAN", 3254, 3771, 2650, 0.0033],
+    ["BIERES", "FRESH", "FRESH 33 cl EXPORT CAN", 25, 0, 2107, 0.0033],
+    ["BIERES", "FRESH", "THB Fresh 33 cl VER", 1881, 2058, 1900, 0.0033],
+    ["BIERES", "FRESH", "THB Fresh 65 cl VER", 35712, 38200, 3000, 0.0065],
     # BIERES - GOLD
-    ["BIERES", "Gold", "Gold 8 50 cl CAN", 1159, 1242, 4500],
-    ["BIERES", "Gold", "Gold 8 50 cl VER", 8661, 9342, 3200],
-    ["BIERES", "Gold", "Gold Blanche 33cl VER", 24605, 26491, 2580],
-    ["BIERES", "Gold", "Gold Blanche 50 cl CAN", 43538, 46234, 4500],
-    ["BIERES", "Gold", "Gold Blanche 50 cl VER", 92121, 101300, 3200],
-    ["BIERES", "Gold", "Gold Amigo 33cl VER", 1463, 0, 2575],
-    ["BIERES", "Gold", "Gold Blonde 50 cl CAN", 8531, 9400, 4500],
-    ["BIERES", "Gold", "Gold Blonde 50 cl VER", 15872, 17086, 3200],
-    ["BIERES", "Gold", "Gold Blonde 65 cl VER", 58077, 60603, 3600],
-    ["BIERES", "Gold", "Gold Blanche 20L FUT", 1464, 1297, 109170],
+    ["BIERES", "Gold", "Gold 8 50 cl CAN", 1159, 1242, 4500, 0.005],
+    ["BIERES", "Gold", "Gold 8 50 cl VER", 8661, 9342, 3200, 0.005],
+    ["BIERES", "Gold", "Gold Blanche 33cl VER", 24605, 26491, 2580, 0.0033],
+    ["BIERES", "Gold", "Gold Blanche 50 cl CAN", 43538, 46234, 4500, 0.005],
+    ["BIERES", "Gold", "Gold Blanche 50 cl VER", 92121, 101300, 3200, 0.005],
+    ["BIERES", "Gold", "Gold Amigo 33cl VER", 1463, 0, 2575, 0.0033],
+    ["BIERES", "Gold", "Gold Blonde 50 cl CAN", 8531, 9400, 4500, 0.005],
+    ["BIERES", "Gold", "Gold Blonde 50 cl VER", 15872, 17086, 3200, 0.005],
+    ["BIERES", "Gold", "Gold Blonde 65 cl VER", 58077, 60603, 3600, 0.0065],
+    ["BIERES", "Gold", "Gold Blanche 20L FUT", 1464, 1297, 109170, 0.2],
     # BIERES - QUEEN
-    ["BIERES", "Queen", "Queen s 65 cl VER", 153975, 163506, 3000],
+    ["BIERES", "Queen", "Queen s 65 cl VER", 153975, 163506, 3000, 0.0065],
     # BIERES - THB
-    ["BIERES", "THB", "THB Pilsener 33 cl VER", 96836, 102020, 1900],
-    ["BIERES", "THB", "THB Pilsener 50 cl CAN", 60246, 63912, 3800],
-    ["BIERES", "THB", "THB Pilsener 65 cl VER", 1513573, 1668977, 3250],
-    ["BIERES", "THB", "THB Pilsener 20L FUT", 2228, 2129, 100000],
-    ["BIERES", "THB", "THB Pilsener 30L FUT", 0, 652, 170000],
-    ["BIERES", "THB", "THB Speciale NOEL 33 cl VER", 736, 0, 1900],
-    ["BIERES", "THB", "THB Pilsener 20L Export FUT", 450, 0, 56500],
-    ["BIERES", "THB", "THB Blanche 20L Export FUT", 47, 0, 64000],
-    ["BIERES", "THB", "THB Pilsener 30L Export FUT", 602, 0, 141670],
-    ["BIERES", "THB", "THB 8 20L Export FUT", 40, 0, 62000],
+    ["BIERES", "THB", "THB Pilsener 33 cl VER", 96836, 102020, 1900, 0.0033],
+    ["BIERES", "THB", "THB Pilsener 50 cl CAN", 60246, 63912, 3800, 0.005],
+    ["BIERES", "THB", "THB Pilsener 65 cl VER", 1513573, 1668977, 3250, 0.0065],
+    ["BIERES", "THB", "THB Pilsener 20L FUT", 2228, 2129, 100000, 0.2],
+    ["BIERES", "THB", "THB Pilsener 30L FUT", 0, 652, 170000, 0.3],
+    ["BIERES", "THB", "THB Speciale NOEL 33 cl VER", 736, 0, 1900, 0.0033],
+    ["BIERES", "THB", "THB Pilsener 20L Export FUT", 450, 0, 56500, 0.2],
+    ["BIERES", "THB", "THB Blanche 20L Export FUT", 47, 0, 64000, 0.2],
+    ["BIERES", "THB", "THB Pilsener 30L Export FUT", 602, 0, 141670, 0.3],
+    ["BIERES", "THB", "THB 8 20L Export FUT", 40, 0, 62000, 0.2],
     # EAUX - CRISTAL
-    ["EAUX", "Cristal", "Cristal 100 cl VER", 1004, 1113, 2750],
-    ["EAUX", "Cristal", "Cristal 150 cl PET", 4516, 4684, 4265],
-    ["EAUX", "Cristal", "Cristal 30 cl VER", 689, 743, 1130],
-    ["EAUX", "Cristal", "Cristal 50 cl VER", 4206, 4480, 1600],
+    ["EAUX", "Cristal", "Cristal 100 cl VER", 1004, 1113, 2750, 0.01],
+    ["EAUX", "Cristal", "Cristal 150 cl PET", 4516, 4684, 4265, 0.015],
+    ["EAUX", "Cristal", "Cristal 30 cl VER", 689, 743, 1130, 0.003],
+    ["EAUX", "Cristal", "Cristal 50 cl VER", 4206, 4480, 1600, 0.005],
     # EAUX - CRISTALLINE
-    ["EAUX", "Cristalline", "Cristalline 100 cl PET", 272844, 292992, 1550],
-    ["EAUX", "Cristalline", "Cristalline 200 cl PET", 268234, 287015, 2680],
+    ["EAUX", "Cristalline", "Cristalline 100 cl PET", 272844, 292992, 1550, 0.01],
+    ["EAUX", "Cristalline", "Cristalline 200 cl PET", 268234, 287015, 2680, 0.02],
     # EAUX - EAU VIVE
-    ["EAUX", "Eau vive", "Eau vive 150 cl PET", 210612, 192457, 2465],
-    ["EAUX", "Eau vive", "Eau vive 50 cl PET", 67919, 71266, 1235],
-    ["EAUX", "Eau vive", "Eau vive 50 cl VER", 364, 2296, 1600],
+    ["EAUX", "Eau vive", "Eau vive 150 cl PET", 210612, 192457, 2465, 0.015],
+    ["EAUX", "Eau vive", "Eau vive 50 cl PET", 67919, 71266, 1235, 0.005],
+    ["EAUX", "Eau vive", "Eau vive 50 cl VER", 364, 2296, 1600, 0.005],
     # ENERGY
-    ["Energy", "FOSA", "FOSA 50 cl CAN", 3265, 15000, 3830],
-    ["Energy", "XXL", "XXL 30cl BOB VER", 19433, 21868, 1750],
-    ["Energy", "XXL", "XXL 30cl VER", 571, 794, 1750],
-    ["Energy", "XXL", "XXL 33 cl CAN", 3001, 4275, 3000],
-    ["Energy", "XXL", "XXL 35cl PET", 16357, 29070, 2600],
+    ["Energy", "FOSA", "FOSA 50 cl CAN", 3265, 15000, 3830, 0.005],
+    ["Energy", "XXL", "XXL 30cl BOB VER", 19433, 21868, 1750, 0.003],
+    ["Energy", "XXL", "XXL 30cl VER", 571, 794, 1750, 0.003],
+    ["Energy", "XXL", "XXL 33 cl CAN", 3001, 4275, 3000, 0.0033],
+    ["Energy", "XXL", "XXL 35cl PET", 16357, 29070, 2600, 0.0035],
 ]
 
 df_base = pd.DataFrame(
-    detail, columns=["Segment", "Marque", "SKU", "2026", "Base_2027", "Prix_2026_Fixe"]
+    detail,
+    columns=["Segment", "Marque", "SKU", "2026", "Base_2027", "Prix_2026_Fixe", "Contenance_hl"],
 )
 
 # Calcul des poids initiaux 2027 (en %)
@@ -180,7 +221,7 @@ if "poids_skus" not in st.session_state:
     st.session_state.poids_skus = df_ps_init.drop(columns=["Poids_SKU_Init"])
 
 if "prix_skus" not in st.session_state:
-    df_prix_init = df_base[["Segment", "Marque", "SKU"]].copy()
+    df_prix_init = df_base[["Segment", "Marque", "SKU", "Contenance_hl"]].copy()
     for annee in ANNEES_ALL:
         df_prix_init[annee] = df_base["Prix_2026_Fixe"].astype(float)
     st.session_state.prix_skus = df_prix_init
@@ -481,29 +522,29 @@ def ecrire_feuille_fusionnee_excel(writer, sheet_title, df_source, cols_annees):
     ws.column_dimensions["B"].width = 16
     ws.column_dimensions["C"].width = 36
     for col_letter in ["D", "E", "F", "G", "H", "I"]:
-        ws.column_dimensions[col_letter].width = 16
+        ws.column_dimensions[col_letter].width = 18
 
 
 # =====================================================
 # NAVIGATION PRINCIPALE : VOLUMES vs CHIFFRE D'AFFAIRES
 # =====================================================
 onglet_vol, onglet_ca = st.tabs([
-    "📦 Simulation Volumes (2026–2031)",
-    "💰 Calcul Chiffre d'Affaires — CA (2026–2031)",
+    "📦 Simulation Volumes en hl (2026–2031)",
+    "💰 Calcul Chiffre d'Affaires en Ar — CA (2026–2031)",
 ])
 
 # #####################################################
-# ONGLET 1 : SIMULATION DES VOLUMES (INCHAGE)
+# ONGLET 1 : SIMULATION DES VOLUMES (INCHANGÉ)
 # #####################################################
 with onglet_vol:
-    st.subheader("1️⃣ Objectifs Globaux (Volumes)")
+    st.subheader("1️⃣ Objectifs Globaux (Volumes en hl)")
 
     df_obj = st.data_editor(
         st.session_state.objectifs,
         column_config={
             "Année": st.column_config.TextColumn("Année", disabled=True),
             "Volume": st.column_config.NumberColumn(
-                "Volume Objectif", format="%d", min_value=0, step=10000
+                "Volume Objectif (hl)", format="%d", min_value=0, step=10000
             ),
         },
         hide_index=True,
@@ -814,7 +855,7 @@ with onglet_vol:
             )
 
     # CALCUL DES VOLUMES (2027 - 2031)
-    df_detail = df_base[["Segment", "Marque", "SKU", "2026"]].copy()
+    df_detail = df_base[["Segment", "Marque", "SKU", "2026", "Contenance_hl"]].copy()
 
     pm_renamed = st.session_state.poids_marques.rename(
         columns={a: f"PM_{a}" for a in ANNEES}
@@ -867,10 +908,10 @@ with onglet_vol:
             x="Année",
             y="Volume",
             color="Segment",
-            title="Évolution des Volumes par Segment (Empilé)",
+            title="Évolution des Volumes (hl) par Segment (Empilé)",
             text_auto=".2s",
         )
-        fig_bar.update_layout(yaxis_title="Volume", xaxis_title="Année")
+        fig_bar.update_layout(yaxis_title="Volume (hl)", xaxis_title="Année")
         st.plotly_chart(fig_bar, use_container_width=True)
 
     with col_g2:
@@ -880,9 +921,9 @@ with onglet_vol:
             y="Volume",
             color="Segment",
             markers=True,
-            title="Trajectoire de Croissance des Volumes par Segment",
+            title="Trajectoire de Croissance des Volumes (hl) par Segment",
         )
-        fig_line.update_layout(yaxis_title="Volume", xaxis_title="Année")
+        fig_line.update_layout(yaxis_title="Volume (hl)", xaxis_title="Année")
         st.plotly_chart(fig_line, use_container_width=True)
 
     col_m1, col_m2 = st.columns(2)
@@ -919,7 +960,7 @@ with onglet_vol:
 
     # TABLEAU VOLUMES DÉTAILLÉS FUSIONNÉ
     st.divider()
-    st.subheader("4️⃣ Volumes Simulés Détaillés")
+    st.subheader("4️⃣ Volumes Simulés Détaillés (hl)")
 
     segments_selectionnes_vol = st.multiselect(
         "🔍 Filtrer par Segment (Volumes) :",
@@ -938,10 +979,11 @@ with onglet_vol:
 
 
 # #####################################################
-# ONGLET 2 : CALCUL CHIFFRE D'AFFAIRES (CA)
+# ONGLET 2 : CALCUL CHIFFRE D'AFFAIRES (CA EN AR)
 # #####################################################
 with onglet_ca:
-    st.subheader("1️⃣ Gestion des Prix Unitaires (2026 fixé — Upload & Édition sur 2027 → 2031)")
+    st.subheader("1️⃣ Gestion des Prix Unitaires par Col / Fût (2026 fixé — Upload & Édition 2027 → 2031)")
+    st.caption("Formule appliquée : **CA (Ar) = (Volume en hl / Contenance unitaire en hl) × Prix Unitaire (Ar)**")
 
     col_p_reset, _ = st.columns([1, 4])
     with col_p_reset:
@@ -1036,7 +1078,6 @@ with onglet_ca:
                                 return float(s) if s != "" else np.nan
                             return float(v)
 
-                        # On filtre uniquement sur les colonnes 2027 -> 2031 (2026 est ignoré car fixé)
                         annees_dans_fichier = [
                             a for a in ANNEES if a in cols_norm_p
                         ]
@@ -1123,6 +1164,9 @@ with onglet_ca:
         "Segment": st.column_config.TextColumn("Segment", disabled=True),
         "Marque": st.column_config.TextColumn("Marque", disabled=True),
         "SKU": st.column_config.TextColumn("Article (SKU)", disabled=True),
+        "Contenance_hl": st.column_config.NumberColumn(
+            "Conv. hl", format="%.4f", disabled=True
+        ),
         "2026": st.column_config.NumberColumn(
             "Prix 2026 (Fixé)", format="%.0f", disabled=True
         ),
@@ -1151,15 +1195,18 @@ with onglet_ca:
             st.session_state.prix_skus.loc[mask, annee] = row[annee]
 
     # =====================================================
-    # CALCUL DU CHIFFRE D'AFFAIRES : CA = VOLUME * PRIX UNITAIRE
+    # CALCUL DU CHIFFRE D'AFFAIRES : (VOL_HL / CONTENANCE_HL) * PRIX
     # =====================================================
     df_ca = df_detail[["Segment", "Marque", "SKU"]].copy()
+    contenance = st.session_state.prix_skus["Contenance_hl"]
+
     for annee in ANNEES_ALL:
-        df_ca[annee] = df_detail[annee] * st.session_state.prix_skus[annee]
+        nb_cols = np.where(contenance > 0, df_detail[annee] / contenance, 0.0)
+        df_ca[annee] = nb_cols * st.session_state.prix_skus[annee]
 
     # KPI SYNTHÈSE CA
     st.divider()
-    st.subheader("2️⃣ Synthèse & Évolution du Chiffre d'Affaires (2026–2031)")
+    st.subheader("2️⃣ Synthèse & Évolution du Chiffre d'Affaires en Ar (2026–2031)")
 
     cols_kpi = st.columns(len(ANNEES_ALL))
     for i, annee in enumerate(ANNEES_ALL):
@@ -1190,10 +1237,10 @@ with onglet_ca:
             x="Année",
             y="Chiffre d'Affaires",
             color="Segment",
-            title="Évolution du Chiffre d'Affaires par Segment (Empilé)",
+            title="Évolution du Chiffre d'Affaires (Ar) par Segment (Empilé)",
             text_auto=".3s",
         )
-        fig_ca_bar.update_layout(yaxis_title="Chiffre d'Affaires", xaxis_title="Année")
+        fig_ca_bar.update_layout(yaxis_title="Chiffre d'Affaires (Ar)", xaxis_title="Année")
         st.plotly_chart(fig_ca_bar, use_container_width=True)
 
     with col_ca2:
@@ -1215,7 +1262,7 @@ with onglet_ca:
 
     # TABLEAU HIÉRARCHIQUE CA FUSIONNÉ
     st.divider()
-    st.subheader("3️⃣ Chiffre d'Affaires Détaillé par Segment / Marque / SKU")
+    st.subheader("3️⃣ Chiffre d'Affaires Détaillé en Ar par Segment / Marque / SKU")
 
     segments_selectionnes_ca = st.multiselect(
         "🔍 Filtrer par Segment (CA) :",
@@ -1240,18 +1287,18 @@ st.divider()
 
 buffer = io.BytesIO()
 with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-    df_obj.to_excel(writer, sheet_name="1_Objectifs_Vol", index=False)
+    df_obj.to_excel(writer, sheet_name="1_Objectifs_Vol_hl", index=False)
     st.session_state.mix.to_excel(writer, sheet_name="2_Mix_Segment", index=False)
     st.session_state.poids_marques.to_excel(writer, sheet_name="3_Poids_Marques", index=False)
     st.session_state.poids_skus.to_excel(writer, sheet_name="4_Poids_SKU", index=False)
-    ecrire_feuille_fusionnee_excel(writer, "5_Simulation_Volumes", df_detail, ANNEES_ALL)
-    st.session_state.prix_skus.to_excel(writer, sheet_name="6_Prix_Unitaires", index=False)
-    ecrire_feuille_fusionnee_excel(writer, "7_Simulation_CA", df_ca, ANNEES_ALL)
+    ecrire_feuille_fusionnee_excel(writer, "5_Simulation_Volumes_hl", df_detail, ANNEES_ALL)
+    st.session_state.prix_skus.to_excel(writer, sheet_name="6_Prix_et_Conv_hl", index=False)
+    ecrire_feuille_fusionnee_excel(writer, "7_Simulation_CA_Ar", df_ca, ANNEES_ALL)
 
 buffer.seek(0)
 
 st.download_button(
-    label="📥 Télécharger le fichier Excel complet — Volumes & CA (.xlsx)",
+    label="📥 Télécharger le fichier Excel complet — Volumes (hl) & CA (Ar) (.xlsx)",
     data=buffer,
     file_name="Simulation_SOP_Volumes_et_CA_2026_2031.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
