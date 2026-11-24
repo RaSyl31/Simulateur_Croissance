@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit.components.v1 as components
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 # =====================================================
@@ -13,63 +14,31 @@ st.set_page_config(page_title="Simulateur S&OP & CA", page_icon="📈", layout="
 st.markdown(
     """
     <style>
-    /* Barre supérieure Streamlit transparente et au-dessus */
     header[data-testid="stHeader"] {
         background: transparent !important;
-        z-index: 1003 !important;
+        z-index: 1005 !important;
     }
 
-    /* Marge supérieure du contenu principal pour ne pas être masqué par l'en-tête et les onglets fixes */
-    [data-testid="stAppViewContainer"] .block-container {
-        padding-top: 7.5rem !important;
-    }
-
-    /* Bandeau titre fixé tout en haut */
-    .fixed-top-header {
+    #sop-fixed-header {
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
-        height: 4.1rem;
-        background-color: var(--background-color, #ffffff);
-        z-index: 1001;
-        display: flex;
-        align-items: center;
-        padding: 0 3rem;
+        z-index: 1002;
+        padding: 0.9rem 3rem 0.5rem 3rem;
         border-bottom: 1px solid rgba(128, 128, 128, 0.15);
     }
-    .fixed-top-header h1 {
+
+    #sop-fixed-header h1 {
         margin: 0 !important;
         padding: 0 !important;
-        font-size: 1.6rem !important;
+        font-size: 1.65rem !important;
         font-weight: 700 !important;
-        color: var(--text-color, #1a1a1a);
-    }
-
-    /* Barre des onglets principaux fixée juste sous le bandeau titre */
-    [data-testid="stAppViewContainer"] [data-testid="stTabs"] > div[data-baseweb="tab-list"] {
-        position: fixed !important;
-        top: 4.1rem !important;
-        left: 0 !important;
-        right: 0 !important;
-        background-color: var(--background-color, #ffffff) !important;
-        z-index: 1000 !important;
-        padding: 0.35rem 3rem 0 3rem !important;
-        border-bottom: 2px solid rgba(128, 128, 128, 0.25) !important;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
-    }
-
-    /* Annule le position:fixed pour les sous-onglets imbriqués */
-    [data-testid="stAppViewContainer"] [data-testid="stTabs"] [data-testid="stTabs"] > div[data-baseweb="tab-list"] {
-        position: static !important;
-        padding: 0 !important;
-        box-shadow: none !important;
-        border-bottom: 1px solid rgba(128, 128, 128, 0.2) !important;
-        z-index: 1 !important;
+        line-height: 1.2 !important;
     }
     </style>
 
-    <div class="fixed-top-header">
+    <div id="sop-fixed-header">
         <h1>📈 Simulateur S&amp;OP — Volumes &amp; Chiffre d'Affaires (2026–2031)</h1>
     </div>
     """,
@@ -580,6 +549,58 @@ onglet_vol, onglet_ca = st.tabs([
     "📦 Simulation Volumes en hl (2026–2031)",
     "💰 Calcul Chiffre d'Affaires en Ar — CA (2026–2031)",
 ])
+
+components.html(
+    """
+    <script>
+    (function() {
+        const parentDoc = window.parent.document;
+
+        function figeHeaderEtOnglets() {
+            const headerDiv = parentDoc.getElementById("sop-fixed-header");
+            const appView = parentDoc.querySelector('[data-testid="stAppViewContainer"]');
+            const mainBlock = parentDoc.querySelector('[data-testid="stMainBlockContainer"]') || parentDoc.querySelector('.block-container');
+            const tabLists = parentDoc.querySelectorAll('[data-baseweb="tab-list"]');
+
+            if (!headerDiv || !tabLists.length) return;
+
+            const bgColor = appView ? getComputedStyle(appView).backgroundColor : "#ffffff";
+            headerDiv.style.backgroundColor = bgColor;
+
+            const headerHeight = headerDiv.getBoundingClientRect().height || 58;
+            const mainTabList = tabLists[0];
+
+            mainTabList.style.position = "fixed";
+            mainTabList.style.top = headerHeight + "px";
+            mainTabList.style.left = "0px";
+            mainTabList.style.right = "0px";
+            mainTabList.style.width = "100%";
+            mainTabList.style.backgroundColor = bgColor;
+            mainTabList.style.zIndex = "1001";
+            mainTabList.style.padding = "0.25rem 3rem 0 3rem";
+            mainTabList.style.borderBottom = "2px solid rgba(128, 128, 128, 0.25)";
+            mainTabList.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.06)";
+
+            const tabsHeight = mainTabList.getBoundingClientRect().height || 44;
+            if (mainBlock) {
+                mainBlock.style.paddingTop = (headerHeight + tabsHeight + 18) + "px";
+            }
+        }
+
+        figeHeaderEtOnglets();
+        setTimeout(figeHeaderEtOnglets, 150);
+        setTimeout(figeHeaderEtOnglets, 500);
+        window.parent.addEventListener("resize", figeHeaderEtOnglets);
+
+        const observer = new MutationObserver(figeHeaderEtOnglets);
+        if (parentDoc.body) {
+            observer.observe(parentDoc.body, { childList: true, subtree: true });
+        }
+    })();
+    </script>
+    """,
+    height=0,
+)
 
 # #####################################################
 # ONGLET 1 : SIMULATION DES VOLUMES
