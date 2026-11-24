@@ -6,45 +6,61 @@ import streamlit as st
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 # =====================================================
-# CONFIGURATION & CSS EN-TÊTE FIGÉE (TITRE + ONGLETS)
+# CONFIGURATION & EN-TÊTE + ONGLETS FIGÉS
 # =====================================================
 st.set_page_config(page_title="Simulateur S&OP & CA", page_icon="📈", layout="wide")
 
 st.markdown(
     """
     <style>
-    /* Réduction de la marge haute du conteneur principal */
-    .block-container {
-        padding-top: 2.5rem !important;
+    /* Barre supérieure Streamlit transparente / discrète */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        z-index: 1002 !important;
     }
 
-    /* Bloc titre figé en haut sous la barre Streamlit */
-    .sticky-main-header {
-        position: sticky;
-        top: 2.85rem;
-        z-index: 999;
+    /* Espace haut de page ajusté pour accueillir le bandeau fixe */
+    .block-container {
+        padding-top: 7.2rem !important;
+    }
+
+    /* Bandeau titre fixé en haut de l'écran */
+    .fixed-top-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4.1rem;
         background-color: var(--background-color, #ffffff);
-        padding: 8px 0 6px 0;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        padding: 0 3rem;
         border-bottom: 1px solid rgba(128, 128, 128, 0.2);
     }
-    .sticky-main-header h1 {
+    .fixed-top-header h1 {
         margin: 0 !important;
         padding: 0 !important;
-        font-size: 1.85rem !important;
-        line-height: 1.3 !important;
+        font-size: 1.65rem !important;
+        font-weight: 700 !important;
+        color: var(--text-color, #1a1a1a);
     }
 
-    /* Barre des onglets principaux figée juste sous le titre */
-    div[data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] {
-        position: sticky;
-        top: 6.1rem;
-        z-index: 998;
-        background-color: var(--background-color, #ffffff);
-        padding-top: 4px;
-        border-bottom: 2px solid rgba(128, 128, 128, 0.2);
+    /* Barre des onglets principaux fixée juste sous le bandeau titre */
+    section.main div[data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] {
+        position: fixed !important;
+        top: 4.1rem !important;
+        left: 0 !important;
+        right: 0 !important;
+        background-color: var(--background-color, #ffffff) !important;
+        z-index: 999 !important;
+        padding: 0.35rem 3rem 0 3rem !important;
+        border-bottom: 2px solid rgba(128, 128, 128, 0.25) !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
     }
     </style>
-    <div class="sticky-main-header">
+
+    <div class="fixed-top-header">
         <h1>📈 Simulateur S&amp;OP — Volumes &amp; Chiffre d'Affaires (2026–2031)</h1>
     </div>
     """,
@@ -179,7 +195,7 @@ df_base["Poids_SKU_Init"] = np.where(
 )
 
 # =====================================================
-# INITIALISATION DES SESSION STATES
+# INITIALISATION DES SESSION STATES (AVEC SÉCURITÉ COLONNES)
 # =====================================================
 if "objectifs" not in st.session_state:
     st.session_state.objectifs = pd.DataFrame({
@@ -220,7 +236,12 @@ if "poids_skus" not in st.session_state:
         df_ps_init[annee] = df_ps_init["Poids_SKU_Init"]
     st.session_state.poids_skus = df_ps_init.drop(columns=["Poids_SKU_Init"])
 
-if "prix_skus" not in st.session_state:
+# Vérification que toutes les colonnes attendues existent dans prix_skus (évite tout KeyError après mise à jour)
+colonnes_prix_attendues = ["Segment", "Marque", "SKU", "Contenance_hl"] + ANNEES_ALL
+if (
+    "prix_skus" not in st.session_state
+    or not all(col in st.session_state.prix_skus.columns for col in colonnes_prix_attendues)
+):
     df_prix_init = df_base[["Segment", "Marque", "SKU", "Contenance_hl"]].copy()
     for annee in ANNEES_ALL:
         df_prix_init[annee] = df_base["Prix_2026_Fixe"].astype(float)
@@ -534,7 +555,7 @@ onglet_vol, onglet_ca = st.tabs([
 ])
 
 # #####################################################
-# ONGLET 1 : SIMULATION DES VOLUMES (INCHANGÉ)
+# ONGLET 1 : SIMULATION DES VOLUMES
 # #####################################################
 with onglet_vol:
     st.subheader("1️⃣ Objectifs Globaux (Volumes en hl)")
@@ -1198,7 +1219,7 @@ with onglet_ca:
     # CALCUL DU CHIFFRE D'AFFAIRES : (VOL_HL / CONTENANCE_HL) * PRIX
     # =====================================================
     df_ca = df_detail[["Segment", "Marque", "SKU"]].copy()
-    contenance = st.session_state.prix_skus["Contenance_hl"]
+    contenance = df_detail["Contenance_hl"]
 
     for annee in ANNEES_ALL:
         nb_cols = np.where(contenance > 0, df_detail[annee] / contenance, 0.0)
