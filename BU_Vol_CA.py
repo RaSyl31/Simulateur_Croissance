@@ -46,7 +46,7 @@ st.markdown(
         color: var(--text-color, #1a1a1a);
     }
 
-    /* Barre d'onglets principaux fixée juste sous le bandeau titre */
+    /* Barre des onglets principaux fixée juste sous le bandeau titre */
     [data-testid="stAppViewContainer"] [data-testid="stTabs"] > div[data-baseweb="tab-list"] {
         position: fixed !important;
         top: 4.1rem !important;
@@ -1309,12 +1309,11 @@ with onglet_ca:
         st.plotly_chart(fig_ca_mix, use_container_width=True)
 
     # =====================================================
-    # GRAPHIQUES TAUX D'ÉVOLUTION CA (%) : GLOBAL, SEGMENT, MARQUE
+    # GRAPHIQUES TAUX D'ÉVOLUTION CA (%) : GLOBAL & PAR SEGMENT
     # =====================================================
     st.divider()
     st.subheader("📈 Taux d'Évolution Annuel du Chiffre d'Affaires (% vs N-1)")
 
-    # 1. Global & Par Segment
     df_ca_global = pd.DataFrame([{"Périmètre": "CA Global", **{a: df_ca[a].sum() for a in ANNEES_ALL}}])
     df_evo_global = calculer_taux_evolution(df_ca_global, ["Périmètre"])
     df_evo_seg = calculer_taux_evolution(df_chart_ca, ["Segment"])
@@ -1357,38 +1356,6 @@ with onglet_ca:
             xaxis_title="Année",
         )
         st.plotly_chart(fig_evo_seg, use_container_width=True)
-
-    # 2. Par Marque (avec filtre segment pour lisibilité)
-    seg_filtre_evo_marque = st.selectbox(
-        "🔍 Filtrer les Marques affichées sur le graphique d'évolution :",
-        options=["Tous les segments"] + ORDRE_SEGMENTS,
-        key="sel_seg_evo_marque",
-    )
-
-    df_ca_marque = df_ca.groupby(["Segment", "Marque"], as_index=False)[ANNEES_ALL].sum()
-    if seg_filtre_evo_marque != "Tous les segments":
-        df_ca_marque = df_ca_marque[df_ca_marque["Segment"] == seg_filtre_evo_marque]
-
-    df_evo_marque = calculer_taux_evolution(df_ca_marque, ["Segment", "Marque"])
-
-    fig_evo_marque = px.line(
-        df_evo_marque,
-        x="Année",
-        y="Taux Évo (%)",
-        color="Marque",
-        markers=True,
-        text="Label (%)" if seg_filtre_evo_marque != "Tous les segments" else None,
-        title=f"Taux d'Évolution du CA par Marque (% / an) — {seg_filtre_evo_marque}",
-        hover_data={"Segment": True, "Taux Évo (%)": ":.2f", "Label (%)": False},
-    )
-    fig_evo_marque.add_hline(y=0, line_dash="dash", line_color="gray")
-    if seg_filtre_evo_marque != "Tous les segments":
-        fig_evo_marque.update_traces(textposition="top center")
-    fig_evo_marque.update_layout(
-        yaxis_title="Croissance CA (%)",
-        xaxis_title="Année",
-    )
-    st.plotly_chart(fig_evo_marque, use_container_width=True)
 
     # TABLEAU HIÉRARCHIQUE CA FUSIONNÉ
     st.divider()
