@@ -26,6 +26,7 @@ st.markdown(
         right: 0;
         z-index: 1002;
         padding: 0.9rem 3rem 0.5rem 3rem;
+        background-color: #ffffff !important; /* Fond blanc solide */
         border-bottom: 1px solid rgba(128, 128, 128, 0.15);
     }
 
@@ -558,40 +559,47 @@ components.html(
 
         function figeHeaderEtOnglets() {
             const headerDiv = parentDoc.getElementById("sop-fixed-header");
-            const appView = parentDoc.querySelector('[data-testid="stAppViewContainer"]');
             const mainBlock = parentDoc.querySelector('[data-testid="stMainBlockContainer"]') || parentDoc.querySelector('.block-container');
             const tabLists = parentDoc.querySelectorAll('[data-baseweb="tab-list"]');
 
             if (!headerDiv || !tabLists.length) return;
 
-            const bgColor = appView ? getComputedStyle(appView).backgroundColor : "#ffffff";
-            headerDiv.style.backgroundColor = bgColor;
-
+            // On force le fond blanc sur le header
+            headerDiv.style.backgroundColor = "#ffffff";
+            
             const headerHeight = headerDiv.getBoundingClientRect().height || 58;
+            
+            // On applique le fixe sur le conteneur des onglets (le premier trouvé)
             const mainTabList = tabLists[0];
 
+            // Style du conteneur d'onglets pour qu'il soit bien collé sous le titre avec fond blanc
             mainTabList.style.position = "fixed";
             mainTabList.style.top = headerHeight + "px";
             mainTabList.style.left = "0px";
             mainTabList.style.right = "0px";
             mainTabList.style.width = "100%";
-            mainTabList.style.backgroundColor = bgColor;
+            mainTabList.style.backgroundColor = "#ffffff"; // Fond blanc obligatoire
             mainTabList.style.zIndex = "1001";
-            mainTabList.style.padding = "0.25rem 3rem 0 3rem";
-            mainTabList.style.borderBottom = "2px solid rgba(128, 128, 128, 0.25)";
-            mainTabList.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.06)";
+            mainTabList.style.padding = "0.5rem 3rem 0.5rem 3rem"; // Padding ajusté
+            mainTabList.style.borderBottom = "1px solid #e0e0e0"; // Ligne de séparation discrète
+            mainTabList.style.boxShadow = "0 4px 6px -6px rgba(0, 0, 0, 0.1)"; // Ombre légère pour la profondeur
 
             const tabsHeight = mainTabList.getBoundingClientRect().height || 44;
+            
+            // Pousse le contenu du bas pour ne pas cacher le haut des tableaux
             if (mainBlock) {
-                mainBlock.style.paddingTop = (headerHeight + tabsHeight + 18) + "px";
+                mainBlock.style.paddingTop = (headerHeight + tabsHeight + 20) + "px";
             }
         }
 
+        // Exécution initiale et délais pour s'assurer que Streamlit a fini de charger
         figeHeaderEtOnglets();
         setTimeout(figeHeaderEtOnglets, 150);
         setTimeout(figeHeaderEtOnglets, 500);
+        setTimeout(figeHeaderEtOnglets, 1000);
         window.parent.addEventListener("resize", figeHeaderEtOnglets);
 
+        // Observateur pour détecter les changements de page ou de thème
         const observer = new MutationObserver(figeHeaderEtOnglets);
         if (parentDoc.body) {
             observer.observe(parentDoc.body, { childList: true, subtree: true });
