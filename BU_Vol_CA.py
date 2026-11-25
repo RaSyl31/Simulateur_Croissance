@@ -256,7 +256,6 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=
     return "".join(html)
 
 def generer_html_agences_par_mois(df_source, agences_cibles):
-    """Génère un tableau dépliable qui montre les mois pour une ou plusieurs agences"""
     df_grp = df_source[df_source["Agence"].isin(agences_cibles)].groupby(["Segment", "Marque", "Article", "Agence", "Mois"])["Volume"].sum().reset_index()
 
     css = """<style>.ag-container{font-family:'Segoe UI',Tahoma,sans-serif;font-size:13px}details{margin-bottom:5px;border:1px solid #d0d0d0;border-radius:4px}summary{padding:8px 12px;background-color:#f8f9fa;cursor:pointer;font-weight:bold;color:#333;border-bottom:1px solid #d0d0d0}summary:hover{background-color:#e9ecef}summary::-webkit-details-marker{display:none}summary::before{content:'▶';display:inline-block;margin-right:10px;font-size:10px;color:#666;transition:transform 0.2s}details[open]>summary::before{transform:rotate(90deg)}.ag-table{width:100%;border-collapse:collapse;text-align:right;margin-top:5px}.ag-table th{background-color:#f1f3f5;padding:6px 10px;border-bottom:2px solid #dee2e6;text-align:center;font-weight:600}.ag-table td{padding:5px 10px;border-bottom:1px solid #eee}.ag-table tr:hover{background-color:#f8f9fa}.ag-row-total td{font-weight:bold;background-color:#fff3cd}</style>"""
@@ -309,6 +308,31 @@ def generer_html_agences_par_mois(df_source, agences_cibles):
         html.append("</tbody></table></details>")
     html.append("</div>")
     return "".join(html)
+
+def styler_pivot_dispatch(df_wide):
+    """Ajoute la ligne 'Total par mois' en dernière ligne et stylise le tableau."""
+    df_res = df_wide.copy()
+    mois_cols = [c for c in MOIS if c in df_res.columns]
+    total_mois = df_res[mois_cols].sum(axis=0)
+    total_row = {c: total_mois[c] for c in mois_cols}
+    if "Total Annuel" in df_res.columns:
+        total_row["Total Annuel"] = total_mois.sum()
+    df_res.loc["Total par mois"] = total_row
+
+    def highlight_rows(row):
+        if row.name == "Total par mois":
+            styles = ["background-color: #FFF2CC; font-weight: bold; color: #111827; border-top: 2px solid #374151;"] * len(row)
+            if "Total Annuel" in row.index:
+                idx_tot = list(row.index).index("Total Annuel")
+                styles[idx_tot] = "background-color: #FDE68A; font-weight: bold; color: #111827; border-top: 2px solid #374151;"
+            return styles
+        styles = [""] * len(row)
+        if "Total Annuel" in row.index:
+            idx_tot = list(row.index).index("Total Annuel")
+            styles[idx_tot] = "background-color: #DBEAFE; font-weight: 600; color: #1E3A8A;"
+        return styles
+
+    return df_res.style.format("{:,.0f}").apply(highlight_rows, axis=1)
 
 # =====================================================
 # NAVIGATION PRINCIPALE
@@ -486,16 +510,12 @@ with onglet_vol:
         df_detail[annee] = df_detail[f"MARQUE_{annee}"] * (df_detail[f"PS_{annee}"] / 100.0)
 
     st.divider()
-    st.subheader("4️⃣ Volumes Simulés Détaillés (hl)")
-    segments_selectionnes_vol = st.multiselect("🔍 Filtrer par Segment (Volumes) :", options=ORDRE_SEGMENTS, default=ORDRE_SEGMENTS, key="filter_vol_seg")
+    st.subheader("4️⃣ Graphiques Volumes & Mix (4 Graphes — 2026–2031)")
+    segments_selectionnes_vol = st.multiselect("🔍 Filtrer par Segment (Volumes & Graphes) :", options=ORDRE_SEGMENTS, default=ORDRE_SEGMENTS, key="filter_vol_seg")
+
     if not segments_selectionnes_vol:
         st.info("Veuillez sélectionner au moins un segment.")
     else:
-        st.markdown(generer_html_fusionne(df_detail, ANNEES_ALL, segments_selectionnes_vol, afficher_evo=False), unsafe_allow_html=True)
-
-        st.divider()
-        st.subheader("5️⃣ Graphiques Volumes & Mix (4 Graphes — 2026–2031)")
-
         df_vol_seg = (
             df_detail[df_detail["Segment"].isin(segments_selectionnes_vol)]
             .groupby("Segment", as_index=False)[ANNEES_ALL]
@@ -508,52 +528,36 @@ with onglet_vol:
         col_v1, col_v2 = st.columns(2)
         with col_v1:
             fig_v1 = px.line(
-                df_vol_seg,
-                x="Année",
-                y="Volume",
-                color="Segment",
-                markers=True,
-                color_discrete_map=COULEURS_SEGMENTS,
-                category_orders={"Segment": ORDRE_SEGMENTS},
+                df_vol_seg, x="Année", y="Volume", color="Segment", markers=True,
+                color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
             )
             st.plotly_chart(styler_graphe(fig_v1, "1. Évolution des Volumes par Segment", "Volume (hl)"), use_container_width=True)
 
         with col_v2:
             fig_v2 = px.bar(
-                df_vol_seg,
-                x="Année",
-                y="Volume",
-                color="Segment",
-                barmode="stack",
-                color_discrete_map=COULEURS_SEGMENTS,
-                category_orders={"Segment": ORDRE_SEGMENTS},
+                df_vol_seg, x="Année", y="Volume", color="Segment", barmode="stack",
+                color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
             )
             st.plotly_chart(styler_graphe(fig_v2, "2. Graphe Empilé des Volumes par Segment", "Volume (hl)"), use_container_width=True)
 
         col_v3, col_v4 = st.columns(2)
         with col_v3:
             fig_v3 = px.line(
-                df_vol_seg,
-                x="Année",
-                y="Mix_Pct",
-                color="Segment",
-                markers=True,
-                color_discrete_map=COULEURS_SEGMENTS,
-                category_orders={"Segment": ORDRE_SEGMENTS},
+                df_vol_seg, x="Année", y="Mix_Pct", color="Segment", markers=True,
+                color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
             )
             st.plotly_chart(styler_graphe(fig_v3, "3. Évolution du Mix Volume (%) par Segment", "Mix (%)"), use_container_width=True)
 
         with col_v4:
             fig_v4 = px.bar(
-                df_vol_seg,
-                x="Année",
-                y="Mix_Pct",
-                color="Segment",
-                barmode="stack",
-                color_discrete_map=COULEURS_SEGMENTS,
-                category_orders={"Segment": ORDRE_SEGMENTS},
+                df_vol_seg, x="Année", y="Mix_Pct", color="Segment", barmode="stack",
+                color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
             )
             st.plotly_chart(styler_graphe(fig_v4, "4. Graphe Empilé du Mix Volume (%)", "Part du volume (%)"), use_container_width=True)
+
+        st.divider()
+        st.subheader("5️⃣ Volumes Simulés Détaillés (hl)")
+        st.markdown(generer_html_fusionne(df_detail, ANNEES_ALL, segments_selectionnes_vol, afficher_evo=False), unsafe_allow_html=True)
 
 
 # #####################################################
@@ -687,16 +691,12 @@ with onglet_ca:
             cols_kpi[i].metric(f"CA {annee}", fmt_val(ca_tot), f"{delta_pct:+.1f}%")
 
     st.divider()
-    st.subheader("3️⃣ Chiffre d'Affaires Détaillé (Ar)")
-    segments_selectionnes_ca = st.multiselect("🔍 Filtrer par Segment (CA) :", options=ORDRE_SEGMENTS, default=ORDRE_SEGMENTS, key="filter_ca_seg")
+    st.subheader("3️⃣ Graphiques CA (3 Graphes — Évolution & Part en %)")
+    segments_selectionnes_ca = st.multiselect("🔍 Filtrer par Segment (CA & Graphes) :", options=ORDRE_SEGMENTS, default=ORDRE_SEGMENTS, key="filter_ca_seg")
+
     if not segments_selectionnes_ca:
         st.info("Veuillez sélectionner au moins un segment.")
     else:
-        st.markdown(generer_html_fusionne(df_ca, ANNEES_ALL, segments_selectionnes_ca, afficher_evo=True), unsafe_allow_html=True)
-
-        st.divider()
-        st.subheader("4️⃣ Graphiques CA (3 Graphes — Évolution & Part en %)")
-
         df_ca_seg = (
             df_ca[df_ca["Segment"].isin(segments_selectionnes_ca)]
             .groupby("Segment", as_index=False)[ANNEES_ALL]
@@ -709,38 +709,27 @@ with onglet_ca:
         col_c1, col_c2 = st.columns(2)
         with col_c1:
             fig_c1 = px.line(
-                df_ca_seg,
-                x="Année",
-                y="CA",
-                color="Segment",
-                markers=True,
-                color_discrete_map=COULEURS_SEGMENTS,
-                category_orders={"Segment": ORDRE_SEGMENTS},
+                df_ca_seg, x="Année", y="CA", color="Segment", markers=True,
+                color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
             )
             st.plotly_chart(styler_graphe(fig_c1, "1. Évolution du CA par Segment (Ar)", "CA (Ar)"), use_container_width=True)
 
         with col_c2:
             fig_c2 = px.bar(
-                df_ca_seg,
-                x="Année",
-                y="CA",
-                color="Segment",
-                barmode="stack",
-                color_discrete_map=COULEURS_SEGMENTS,
-                category_orders={"Segment": ORDRE_SEGMENTS},
+                df_ca_seg, x="Année", y="CA", color="Segment", barmode="stack",
+                color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
             )
             st.plotly_chart(styler_graphe(fig_c2, "2. Répartition Empilée du CA par Segment (Ar)", "CA (Ar)"), use_container_width=True)
 
         fig_c3 = px.bar(
-            df_ca_seg,
-            x="Année",
-            y="Part_Pct",
-            color="Segment",
-            barmode="stack",
-            color_discrete_map=COULEURS_SEGMENTS,
-            category_orders={"Segment": ORDRE_SEGMENTS},
+            df_ca_seg, x="Année", y="Part_Pct", color="Segment", barmode="stack",
+            color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
         )
         st.plotly_chart(styler_graphe(fig_c3, "3. Part du CA en (%) par Segment (2026–2031)", "Part du CA (%)"), use_container_width=True)
+
+        st.divider()
+        st.subheader("4️⃣ Chiffre d'Affaires Détaillé (Ar)")
+        st.markdown(generer_html_fusionne(df_ca, ANNEES_ALL, segments_selectionnes_ca, afficher_evo=True), unsafe_allow_html=True)
 
 
 # #####################################################
@@ -772,6 +761,13 @@ with onglet_agences:
     if df_ag_vol.empty:
         st.warning("Aucune donnée pour ces filtres.")
     else:
+        fig_ag = px.bar(
+            df_ag_vol.groupby(["Agence", "Segment"], as_index=False)["Volume"].sum(),
+            x="Agence", y="Volume", color="Segment", barmode="stack",
+            color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
+        )
+        st.plotly_chart(styler_graphe(fig_ag, f"Répartition des Volumes par Agence ({annee_agence})", "Volume (hl)"), use_container_width=True)
+
         agences_a_afficher = [agence_filtre] if agence_filtre != "Toutes les agences" else AGENCES
         st.markdown(generer_html_agences_par_mois(df_ag_vol, agences_a_afficher), unsafe_allow_html=True)
 
@@ -794,8 +790,15 @@ with onglet_dispatch:
     df_pivot_wide = df_pivot.pivot(index="Agence", columns="Mois", values="Volume_Dispatch").fillna(0)
     df_pivot_wide["Total Annuel"] = df_pivot_wide.sum(axis=1)
 
+    fig_disp_mois = px.bar(
+        df_disp_annee.groupby(["Mois", "Segment"], as_index=False)["Volume_Dispatch"].sum().sort_values("Mois"),
+        x="Mois", y="Volume_Dispatch", color="Segment", barmode="stack",
+        color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
+    )
+    st.plotly_chart(styler_graphe(fig_disp_mois, f"Évolution Mensuelle du Dispatch ({annee_dispatch})", "Volume (hl)"), use_container_width=True)
+
     st.markdown(f"#### 📊 Volume dispatché par Agence et par Mois pour {annee_dispatch}")
-    st.dataframe(df_pivot_wide.style.format("{:,.0f}").background_gradient(cmap="Blues", axis=None), use_container_width=True)
+    st.dataframe(styler_pivot_dispatch(df_pivot_wide), use_container_width=True)
 
     st.markdown("---")
     st.subheader("📥 Télécharger le Dispatch")
