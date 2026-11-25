@@ -139,80 +139,51 @@ TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
 # =====================================================
-# CHARGEMENT DES POIDS AGENCES & MOIS DEPUIS LE FICHIER
+# POIDS AGENCES & MOIS (INTÉGRÉS SANS LECTURE FICHIER)
 # =====================================================
+POIDS_AGENCE_FIXES = {
+    "01-Tanjombato": 0.19826856758695652,
+    "11-Andranomahery": 0.18943966207826087,
+    "09-Tamatave": 0.11534420072173913,
+    "07-Majunga": 0.07513787697543478,
+    "12-Antsirabe": 0.06996317881369565,
+    "18-Ambanja": 0.050917231935,
+    "04-Tulear": 0.046908364911086955,
+    "08-Manakara": 0.04599593778717391,
+    "03-Usine-Diego": 0.039402884312826086,
+    "19-Sambava": 0.03525309595,
+    "21-Nosy-Be": 0.03247549311347826,
+    "05-Fianarantsoa": 0.031521074194565216,
+    "24-Fort-Dauphin": 0.027330349561304347,
+    "06-Ihosy": 0.021180052245217392,
+    "23-Morondava": 0.020862034816347825,
+}
+
 @st.cache_data
 def charger_dispatch_depuis_fichier():
-    fichiers_candidats = [
-        "Vol par AG_2.xlsx",
-        "Vol par AG_5.xlsx",
-        "Vol par AG_4.xlsx",
-        "Vol par AG_3.xlsx",
-        "Vol par AG.xlsx",
-    ]
-    chemin_fichier = next((f for f in fichiers_candidats if os.path.exists(f)), None)
+    agences_liste = list(POIDS_AGENCE_FIXES.keys())
+    tot_ag = sum(POIDS_AGENCE_FIXES.values())
+    poids_ag_norm = {ag: w / tot_ag for ag, w in POIDS_AGENCE_FIXES.items()}
 
-    if chemin_fichier is None:
-        agences_fallback = [
-            "01-Tanjombato", "11-Andranomahery", "09-Tamatave", "07-Majunga", "12-Antsirabe",
-            "18-Ambanja", "04-Tulear", "08-Manakara", "03-Usine-Diego", "19-Sambava",
-            "21-Nosy-Be", "05-Fianarantsoa", "24-Fort-Dauphin", "06-Ihosy", "23-Morondava",
-        ]
-        np.random.seed(42)
-        rows = []
-        for _, r in df_base.iterrows():
-            if r["Base_2027"] == 0:
-                continue
-            p_ag = np.random.dirichlet(np.ones(len(agences_fallback)))
-            p_m = np.random.dirichlet(np.ones(len(MOIS)))
-            for i_a, ag in enumerate(agences_fallback):
-                for i_m, m in enumerate(MOIS):
-                    rows.append({
-                        "Segment": r["Segment"], "Marque": r["Marque"], "Article": r["SKU"],
-                        "Agence": ag, "Mois": m, "Poids_Dispatch": p_ag[i_a] * p_m[i_m],
-                    })
-        return agences_fallback, pd.DataFrame(rows)
-
-    xls = pd.ExcelFile(chemin_fichier)
-    feuille_cible = "Feuil2" if "Feuil2" in xls.sheet_names else xls.sheet_names[0]
-    df_xl = pd.read_excel(chemin_fichier, sheet_name=feuille_cible)
-
-    col_poids_reel = df_xl.columns[-1] if "Poids" not in df_xl.columns else "Poids"
-    cols_requis = ["Année", "Segment", "Marque", "Article", "Agence", "Volume", "Mois", col_poids_reel]
-    df_hl = df_xl[cols_requis].rename(columns={col_poids_reel: "Poids"}).copy()
-    df_hl["Agence_Norm"] = df_hl["Agence"].astype(str).str.strip()
-    df_hl = df_hl[df_hl["Agence"].notna() & (df_hl["Agence_Norm"] != "0") & (df_hl["Agence_Norm"] != "")]
-
-    df_hl["Poids_Num"] = pd.to_numeric(df_hl["Poids"], errors="coerce").fillna(0.0)
-    tot_poids = df_hl["Poids_Num"].sum()
-    df_hl["Poids_Norm"] = (df_hl["Poids_Num"] / tot_poids) if tot_poids > 0 else 0.0
-    df_hl["Mois_Norm"] = pd.to_numeric(df_hl["Mois"], errors="coerce").fillna(1).astype(int).apply(lambda x: f"{x:02d}")
-
-    ag_w = df_hl.groupby("Agence_Norm", as_index=False)["Poids_Norm"].sum()
-    tot_ag_w = ag_w["Poids_Norm"].sum()
-    ag_w["Poids_Agence"] = np.where(tot_ag_w > 0, ag_w["Poids_Norm"] / tot_ag_w, 1.0 / len(ag_w))
-    ag_w = ag_w.sort_values("Poids_Agence", ascending=False).reset_index(drop=True)
-    agences_liste = ag_w["Agence_Norm"].tolist()
-    poids_agence_map = dict(zip(ag_w["Agence_Norm"], ag_w["Poids_Agence"]))
-
-    ag_m_w = df_hl.groupby(["Agence_Norm", "Mois_Norm"], as_index=False)["Poids_Norm"].sum()
-    ag_m_tot = ag_m_w.groupby("Agence_Norm")["Poids_Norm"].transform("sum")
-    ag_m_w["Poids_Mois_Dans_Ag"] = np.where(ag_m_tot > 0, ag_m_w["Poids_Norm"] / ag_m_tot, 1.0 / len(MOIS))
-    poids_mois_map = {(r["Agence_Norm"], r["Mois_Norm"]): r["Poids_Mois_Dans_Ag"] for _, r in ag_m_w.iterrows()}
+    # Saisonnalité mensuelle par agence (somme = 1.0 par agence)
+    saison_base = np.array([
+        0.065398, 0.056048, 0.081488, 0.075870, 0.086150, 0.103963,
+        0.068800, 0.085406, 0.084724, 0.088832, 0.096839, 0.106482,
+    ])
+    saison_base = saison_base / saison_base.sum()
 
     rows_final = []
     for _, r in df_base.iterrows():
         for ag in agences_liste:
-            p_ag = poids_agence_map.get(ag, 0.0)
-            for m in MOIS:
-                p_m = poids_mois_map.get((ag, m), 1.0 / len(MOIS))
+            p_ag = poids_ag_norm[ag]
+            for idx_m, m in enumerate(MOIS):
                 rows_final.append({
                     "Segment": r["Segment"],
                     "Marque": r["Marque"],
                     "Article": r["SKU"],
                     "Agence": ag,
                     "Mois": m,
-                    "Poids_Dispatch": p_ag * p_m,
+                    "Poids_Dispatch": p_ag * float(saison_base[idx_m]),
                 })
 
     return agences_liste, pd.DataFrame(rows_final)
