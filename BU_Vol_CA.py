@@ -143,7 +143,7 @@ SEG_MAP_XL = {"ALCOMIX": "Alcomix", "BG": "BG", "BI": "BIERES", "EAUX": "EAUX", 
 
 @st.cache_data
 def charger_dispatch_depuis_fichier():
-    fichiers_candidats = ["Vol par AG_2.xlsx", "Vol par AG.xlsx"]
+    fichiers_candidats = ["Vol par AG_3.xlsx", "Vol par AG_2.xlsx", "Vol par AG.xlsx"]
     chemin_fichier = next((f for f in fichiers_candidats if os.path.exists(f)), None)
 
     if chemin_fichier is None:
@@ -167,7 +167,10 @@ def charger_dispatch_depuis_fichier():
                     })
         return agences_fallback, pd.DataFrame(rows)
 
-    df_xl = pd.read_excel(chemin_fichier, sheet_name="Feuil1")
+    xls = pd.ExcelFile(chemin_fichier)
+    feuille_cible = "Feuil2" if "Feuil2" in xls.sheet_names else ("Feuil1" if "Feuil1" in xls.sheet_names else xls.sheet_names[0])
+    df_xl = pd.read_excel(chemin_fichier, sheet_name=feuille_cible)
+
     df_hl = df_xl[
         (df_xl["Col/Hl"].astype(str).str.strip() == "Hecto")
         & (df_xl["Agence"].notna())
@@ -197,7 +200,6 @@ def charger_dispatch_depuis_fichier():
     tot_art = grp_art.groupby(["Segment_Norm", "Marque_Norm", "Article_Norm"])["Valeur_Num"].transform("sum")
     grp_art["Poids_Art"] = np.where(tot_art > 0, grp_art["Valeur_Num"] / tot_art, 0.0)
 
-    # Profil global de repli (sur les 15 agences x 12 mois) si un SKU n'a pas de volume dans le fichier
     grp_glob = grp_art.groupby(["Agence_Norm", "Mois_Norm"], as_index=False)["Valeur_Num"].sum()
     tot_glob = grp_glob["Valeur_Num"].sum()
     grp_glob["Poids_Glob"] = np.where(tot_glob > 0, grp_glob["Valeur_Num"] / tot_glob, 1.0 / (len(agences_liste) * len(MOIS)))
@@ -210,7 +212,6 @@ def charger_dispatch_depuis_fichier():
     poids_sku_only_map = {}
     for (_, _, art, ag, m), p in poids_art_map.items():
         poids_sku_only_map[(art, ag, m)] = poids_sku_only_map.get((art, ag, m), 0.0) + p
-    # Normaliser par article si doublon
     sku_sums = {}
     for (art, _, _), p in poids_sku_only_map.items():
         sku_sums[art] = sku_sums.get(art, 0.0) + p
