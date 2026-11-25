@@ -187,7 +187,6 @@ def charger_dispatch_depuis_fichier():
     df_hl["Poids_Norm"] = (df_hl["Poids_Num"] / tot_poids) if tot_poids > 0 else 0.0
     df_hl["Mois_Norm"] = pd.to_numeric(df_hl["Mois"], errors="coerce").fillna(1).astype(int).apply(lambda x: f"{x:02d}")
 
-    # 1. Poids global exact de chaque agence sur l'ensemble du fichier
     ag_w = df_hl.groupby("Agence_Norm", as_index=False)["Poids_Norm"].sum()
     tot_ag_w = ag_w["Poids_Norm"].sum()
     ag_w["Poids_Agence"] = np.where(tot_ag_w > 0, ag_w["Poids_Norm"] / tot_ag_w, 1.0 / len(ag_w))
@@ -195,13 +194,11 @@ def charger_dispatch_depuis_fichier():
     agences_liste = ag_w["Agence_Norm"].tolist()
     poids_agence_map = dict(zip(ag_w["Agence_Norm"], ag_w["Poids_Agence"]))
 
-    # 2. Saisonnalité mensuelle (01..12) par agence
     ag_m_w = df_hl.groupby(["Agence_Norm", "Mois_Norm"], as_index=False)["Poids_Norm"].sum()
     ag_m_tot = ag_m_w.groupby("Agence_Norm")["Poids_Norm"].transform("sum")
     ag_m_w["Poids_Mois_Dans_Ag"] = np.where(ag_m_tot > 0, ag_m_w["Poids_Norm"] / ag_m_tot, 1.0 / len(MOIS))
     poids_mois_map = {(r["Agence_Norm"], r["Mois_Norm"]): r["Poids_Mois_Dans_Ag"] for _, r in ag_m_w.iterrows()}
 
-    # 3. Poids combiné Agence * Mois (somme sur les 15 agences x 12 mois = 1.0)
     rows_final = []
     for _, r in df_base.iterrows():
         for ag in agences_liste:
