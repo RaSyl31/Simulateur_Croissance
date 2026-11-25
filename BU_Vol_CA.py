@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit.components.v1 as components
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 # =====================================================
@@ -30,6 +31,14 @@ ANNEES_ALL = ["2026"] + ANNEES
 ORDRE_SEGMENTS = ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]
 MOIS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
 
+COULEURS_SEGMENTS = {
+    "Alcomix": "#C00000",
+    "BG": "#1F4E78",
+    "BIERES": "#D97706",
+    "EAUX": "#0284C7",
+    "Energy": "#15803D",
+}
+
 SEGMENT_MAP_EXCEL = {
     "ALCOMIX": "Alcomix",
     "BG": "BG",
@@ -47,7 +56,7 @@ def normaliser_segment(val):
     return SEGMENT_MAP_EXCEL.get(s, SEGMENT_MAP_EXCEL.get(s.upper(), s))
 
 # =====================================================
-# BASE DETAILLEE (TOTAUX 2027 = 4 600 000 HL)
+# BASE DETAILLEE
 # =====================================================
 detail = [
     ["Alcomix", "Booster", "Booster Appel-Mix 50CL VER", 21855, 26734, 3250, 0.005],
@@ -146,7 +155,7 @@ TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
 # =====================================================
-# CHARGEMENT DES POIDS PAR MOIS & PAR AGENCE (VOL PAR AG.XLSX)
+# DONNEES AGENCES ET DISPATCH (VOL PAR AG.XLSX)
 # =====================================================
 AGENCES_FALLBACK = ["01-Tanjombato", "03-Usine-Diego", "04-Tulear", "05-Fianarantsoa", "09-Tamatave", "11-Andranomahery"]
 
@@ -163,22 +172,15 @@ def charger_poids_2027(filepath="Vol par AG.xlsx"):
             poids_ag = np.random.dirichlet(np.ones(len(AGENCES_FALLBACK)), size=1)[0]
             for i_m, m in enumerate(MOIS):
                 rows_mois.append({
-                    "Segment": row["Segment"],
-                    "Marque": row["Marque"],
-                    "Article": row["SKU"],
-                    "Mois": m,
-                    "Poids_Mois": float(poids_mois[i_m]),
+                    "Segment": row["Segment"], "Marque": row["Marque"], "Article": row["SKU"],
+                    "Mois": m, "Poids_Mois": float(poids_mois[i_m])
                 })
                 for i_ag, ag in enumerate(AGENCES_FALLBACK):
                     rows_ag_mois.append({
-                        "Segment": row["Segment"],
-                        "Marque": row["Marque"],
-                        "Article": row["SKU"],
-                        "Agence": ag,
-                        "Mois": m,
-                        "Poids_Dispatch": float(poids_ag[i_ag] * poids_mois[i_m]),
+                        "Segment": row["Segment"], "Marque": row["Marque"], "Article": row["SKU"],
+                        "Agence": ag, "Mois": m, "Poids_Dispatch": float(poids_ag[i_ag] * poids_mois[i_m])
                     })
-        return pd.DataFrame(rows_mois), pd.DataFrame(rows_ag_mois), AGENCES_FALLBACK, False
+        return pd.DataFrame(rows_mois), pd.DataFrame(rows_ag_mois), AGENCES_FALLBACK
 
     xls = pd.ExcelFile(filepath)
     sheet_name = "Feuil1" if "Feuil1" in xls.sheet_names else xls.sheet_names[0]
@@ -208,9 +210,9 @@ def charger_poids_2027(filepath="Vol par AG.xlsx"):
     )
 
     agences_liste = sorted(df_poids_ag_mois["Agence"].unique().tolist(), key=lambda x: (0 if x == "0" else 1, x))
-    return df_poids_mois, df_poids_ag_mois, agences_liste, True
+    return df_poids_mois, df_poids_ag_mois, agences_liste
 
-df_poids_mois, df_dispatch_base, AGENCES, dispatch_from_excel = charger_poids_2027("Vol par AG.xlsx")
+df_poids_mois, df_dispatch_base, AGENCES = charger_poids_2027("Vol par AG.xlsx")
 
 # =====================================================
 # INITIALISATION DES SESSION STATES
@@ -248,6 +250,18 @@ def fmt_val(val):
     if pd.isna(val) or round(val) == 0:
         return "-"
     return f"{val:,.0f}".replace(",", " ")
+
+def styler_graphe(fig, titre, yaxis_titre):
+    fig.update_layout(
+        template="plotly_white",
+        title={"text": titre, "font": {"size": 16, "family": "Segoe UI, Tahoma, sans-serif"}},
+        yaxis_title=yaxis_titre,
+        legend_title_text="Segment",
+        hovermode="x unified",
+        margin=dict(l=20, r=20, t=55, b=20),
+        font=dict(family="Segoe UI, Tahoma, sans-serif", size=12),
+    )
+    return fig
 
 def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=False):
     df_sub = df_source[df_source["Segment"].isin(segments_cibles)]
@@ -298,136 +312,70 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=
     html.append("</tbody></table></div>")
     return "".join(html)
 
-def generer_html_agences_par_mois(df_source, segments_cibles, total_general_override=None):
-    """Génère un tableau matriciel Segment / Marque / Article par Mois (01 à 12) + Total général."""
-    df_filtre = df_source[df_source["Segment"].isin(segments_cibles)]
-    df_grp = (
-        df_filtre.groupby(["Segment", "Marque", "Article", "Mois"], as_index=False, sort=False)["Volume"]
-        .sum()
-    )
+def generer_html_agences_par_mois(df_source, agences_cibles, total_general_override=None):
+    """Génère un tableau dépliable qui montre les mois pour une ou plusieurs agences"""
+    df_grp = df_source[df_source["Agence"].isin(agences_cibles)].groupby(["Segment", "Marque", "Article", "Agence", "Mois"], as_index=False, sort=False)["Volume"].sum()
 
-    css = """
-    <style>
-    .tcd-container {
-        max-height: 850px;
-        overflow: auto;
-        border: 1px solid #2b4c7e;
-        font-family: 'Segoe UI', Tahoma, sans-serif;
-        font-size: 12.5px;
-    }
-    table.tcd-table {
-        width: 100%;
-        border-collapse: collapse;
-        text-align: right;
-    }
-    table.tcd-table thead th {
-        position: sticky;
-        top: 0;
-        background-color: #1f4e78;
-        color: #ffffff;
-        padding: 7px 8px;
-        border: 1px solid #3a6ea5;
-        z-index: 2;
-        text-align: center;
-        font-weight: 600;
-    }
-    table.tcd-table thead th.col-label {
-        text-align: left;
-        min-width: 260px;
-    }
-    table.tcd-table td {
-        padding: 4px 8px;
-        border: 1px solid #d0d7de;
-        white-space: nowrap;
-    }
-    .tcd-grand-total td {
-        background-color: #16365c;
-        color: #ffffff;
-        font-weight: 700;
-        border-top: 2px solid #0d223a;
-        border-bottom: 2px solid #0d223a;
-    }
-    .tcd-seg-row td {
-        background-color: #2f5597;
-        color: #ffffff;
-        font-weight: 700;
-    }
-    .tcd-marque-row td {
-        background-color: #d9e1f2;
-        color: #111111;
-        font-weight: 700;
-    }
-    .tcd-art-row td {
-        background-color: #ffffff;
-        color: #222222;
-    }
-    .tcd-art-row:hover td {
-        background-color: #f2f6fc;
-    }
-    .tcd-label-seg {
-        text-align: left !important;
-        padding-left: 8px !important;
-    }
-    .tcd-label-marque {
-        text-align: left !important;
-        padding-left: 22px !important;
-    }
-    .tcd-label-art {
-        text-align: left !important;
-        padding-left: 38px !important;
-    }
-    .tcd-total-col {
-        font-weight: 700;
-    }
-    </style>
-    """
+    css = """<style>.ag-container{font-family:'Segoe UI',Tahoma,sans-serif;font-size:13px}details{margin-bottom:5px;border:1px solid #d0d0d0;border-radius:4px}summary{padding:8px 12px;background-color:#f8f9fa;cursor:pointer;font-weight:bold;color:#333;border-bottom:1px solid #d0d0d0}summary:hover{background-color:#e9ecef}summary::-webkit-details-marker{display:none}summary::before{content:'▶';display:inline-block;margin-right:10px;font-size:10px;color:#666;transition:transform 0.2s}details[open]>summary::before{transform:rotate(90deg)}.ag-table{width:100%;border-collapse:collapse;text-align:right;margin-top:5px}.ag-table th{background-color:#f1f3f5;padding:6px 10px;border-bottom:2px solid #dee2e6;text-align:center;font-weight:600}.ag-table td{padding:5px 10px;border-bottom:1px solid #eee}.ag-table tr:hover{background-color:#f8f9fa}.ag-row-total td{font-weight:bold;background-color:#fff3cd}.ag-grand-total td{font-weight:bold;background-color:#fff2cc;font-size:14px;border-top:2px solid #d0d0d0;border-bottom:2px solid #d0d0d0}</style>"""
+    html = [css, '<div class="ag-container">']
 
-    html = [css, '<div class="tcd-container"><table class="tcd-table">']
-    html.append('<thead><tr><th class="col-label">SEGMENTS / Marque / Article</th>')
+    grand_total = total_general_override if total_general_override is not None else df_grp["Volume"].sum()
+    html.append('<table class="ag-table" style="margin-bottom:8px;"><thead><tr><th style="text-align:left;">Synthèse Globale</th>')
     for m in MOIS:
         html.append(f"<th>{m}</th>")
     html.append("<th>Total général</th></tr></thead><tbody>")
-
-    grand_total = total_general_override if total_general_override is not None else df_grp["Volume"].sum()
-    html.append('<tr class="tcd-grand-total"><td class="tcd-label-seg">Total général</td>')
+    html.append('<tr class="ag-grand-total"><td style="text-align:left;">Total général</td>')
     for m in MOIS:
-        val_m = df_grp[df_grp["Mois"] == m]["Volume"].sum()
-        html.append(f"<td>{fmt_val(val_m)}</td>")
-    html.append(f"<td>{fmt_val(grand_total)}</td></tr>")
+        val_mois = df_grp[df_grp["Mois"] == m]["Volume"].sum()
+        html.append(f"<td>{fmt_val(val_mois)}</td>")
+    html.append(f"<td>{fmt_val(grand_total)}</td></tr></tbody></table>")
 
     for segment in ORDRE_SEGMENTS:
-        if segment not in segments_cibles:
-            continue
         df_seg = df_grp[df_grp["Segment"] == segment]
         if df_seg.empty:
             continue
 
         seg_total = df_seg["Volume"].sum()
-        html.append(f'<tr class="tcd-seg-row"><td class="tcd-label-seg">{segment}</td>')
+        html.append(f'<details><summary>{segment} (Total : {fmt_val(seg_total)} hl)</summary>')
+
+        html.append('<table class="ag-table"><thead><tr><th style="text-align:left;">Marque / Article / Agence</th>')
         for m in MOIS:
-            val_m = df_seg[df_seg["Mois"] == m]["Volume"].sum()
-            html.append(f"<td>{fmt_val(val_m)}</td>")
-        html.append(f'<td class="tcd-total-col">{fmt_val(seg_total)}</td></tr>')
+            html.append(f"<th>{m}</th>")
+        html.append("<th>Total</th></tr></thead><tbody>")
+
+        html.append('<tr class="ag-row-total"><td style="text-align:left;">Total Segment</td>')
+        for m in MOIS:
+            val_mois = df_seg[df_seg["Mois"] == m]["Volume"].sum()
+            html.append(f"<td>{fmt_val(val_mois)}</td>")
+        html.append(f"<td>{fmt_val(seg_total)}</td></tr>")
 
         for marque in df_seg["Marque"].unique():
             df_marq = df_seg[df_seg["Marque"] == marque]
             marq_total = df_marq["Volume"].sum()
-            html.append(f'<tr class="tcd-marque-row"><td class="tcd-label-marque">{marque}</td>')
+
+            html.append(f'<tr><td colspan="{len(MOIS)+2}" style="padding:0;"><details><summary style="background:none;border:none;padding:5px 10px;font-weight:bold;color:#555;">{marque}</summary>')
+            html.append('<table class="ag-table" style="margin:0;"><tbody>')
+
+            html.append('<tr class="ag-row-total"><td style="text-align:left;">Total Marque</td>')
             for m in MOIS:
-                val_m = df_marq[df_marq["Mois"] == m]["Volume"].sum()
-                html.append(f"<td>{fmt_val(val_m)}</td>")
-            html.append(f'<td class="tcd-total-col">{fmt_val(marq_total)}</td></tr>')
+                val_mois = df_marq[df_marq["Mois"] == m]["Volume"].sum()
+                html.append(f"<td>{fmt_val(val_mois)}</td>")
+            html.append(f"<td>{fmt_val(marq_total)}</td></tr>")
 
             for article in df_marq["Article"].unique():
                 df_art = df_marq[df_marq["Article"] == article]
-                art_total = df_art["Volume"].sum()
-                html.append(f'<tr class="tcd-art-row"><td class="tcd-label-art">{article}</td>')
-                for m in MOIS:
-                    val_m = df_art[df_art["Mois"] == m]["Volume"].sum()
-                    html.append(f"<td>{fmt_val(val_m)}</td>")
-                html.append(f'<td class="tcd-total-col">{fmt_val(art_total)}</td></tr>')
+                for agence in df_art["Agence"].unique():
+                    df_ag = df_art[df_art["Agence"] == agence]
+                    art_ag_total = df_ag["Volume"].sum()
+                    html.append(f'<tr><td style="text-align:left;">{article} - {agence}</td>')
+                    for m in MOIS:
+                        val_m = df_ag[df_ag["Mois"] == m]["Volume"].sum()
+                        html.append(f"<td>{fmt_val(val_m)}</td>")
+                    html.append(f"<td>{fmt_val(art_ag_total)}</td></tr>")
 
-    html.append("</tbody></table></div>")
+            html.append("</tbody></table></details></td></tr>")
+        html.append("</tbody></table></details>")
+    html.append("</div>")
     return "".join(html)
 
 # =====================================================
@@ -613,22 +561,23 @@ with onglet_vol:
     else:
         st.markdown(generer_html_fusionne(df_detail, ANNEES_ALL, segments_selectionnes_vol, afficher_evo=False), unsafe_allow_html=True)
 
-        df_graph_vol = (
+        st.markdown("---")
+        df_g_vol = (
             df_detail[df_detail["Segment"].isin(segments_selectionnes_vol)]
             .groupby("Segment", as_index=False)[ANNEES_ALL]
             .sum()
-            .melt(id_vars="Segment", value_vars=ANNEES_ALL, var_name="Année", value_name="Volume (hl)")
+            .melt(id_vars="Segment", value_vars=ANNEES_ALL, var_name="Année", value_name="Volume")
         )
-        fig_vol = px.bar(
-            df_graph_vol,
+        fig_g_vol = px.bar(
+            df_g_vol,
             x="Année",
-            y="Volume (hl)",
+            y="Volume",
             color="Segment",
             barmode="stack",
-            title="Évolution des Volumes par Segment (2026–2031)",
-            text_auto=".2s",
+            color_discrete_map=COULEURS_SEGMENTS,
+            category_orders={"Segment": ORDRE_SEGMENTS},
         )
-        st.plotly_chart(fig_vol, use_container_width=True)
+        st.plotly_chart(styler_graphe(fig_g_vol, "Évolution des Volumes par Segment (2026–2031)", "Volume (hl)"), use_container_width=True)
 
 
 # #####################################################
@@ -769,21 +718,23 @@ with onglet_ca:
     else:
         st.markdown(generer_html_fusionne(df_ca, ANNEES_ALL, segments_selectionnes_ca, afficher_evo=True), unsafe_allow_html=True)
 
-        df_graph_ca = (
+        st.markdown("---")
+        df_g_ca = (
             df_ca[df_ca["Segment"].isin(segments_selectionnes_ca)]
             .groupby("Segment", as_index=False)[ANNEES_ALL]
             .sum()
-            .melt(id_vars="Segment", value_vars=ANNEES_ALL, var_name="Année", value_name="CA (Ar)")
+            .melt(id_vars="Segment", value_vars=ANNEES_ALL, var_name="Année", value_name="CA")
         )
-        fig_ca = px.line(
-            df_graph_ca,
+        fig_g_ca = px.line(
+            df_g_ca,
             x="Année",
-            y="CA (Ar)",
+            y="CA",
             color="Segment",
             markers=True,
-            title="Évolution du Chiffre d'Affaires par Segment (2026–2031)",
+            color_discrete_map=COULEURS_SEGMENTS,
+            category_orders={"Segment": ORDRE_SEGMENTS},
         )
-        st.plotly_chart(fig_ca, use_container_width=True)
+        st.plotly_chart(styler_graphe(fig_g_ca, "Évolution du Chiffre d'Affaires par Segment (2026–2031)", "CA (Ar)"), use_container_width=True)
 
 
 # #####################################################
@@ -791,8 +742,6 @@ with onglet_ca:
 # #####################################################
 with onglet_agences:
     st.subheader("📍 Volumes par Agence & par Mois")
-    if dispatch_from_excel:
-        st.caption("Poids mensuels 2027 par article chargés depuis **Vol par AG.xlsx** (Hecto).")
 
     col_ag1, col_ag2, col_ag3 = st.columns(3)
     with col_ag1:
@@ -800,12 +749,7 @@ with onglet_agences:
     with col_ag2:
         agence_filtre = st.selectbox("Sélectionnez l'Agence :", ["Toutes les agences"] + AGENCES, key="ag_agence")
     with col_ag3:
-        segment_filtre_ag = st.multiselect(
-            "Sélectionnez le(s) Segment(s) :",
-            options=ORDRE_SEGMENTS,
-            default=ORDRE_SEGMENTS,
-            key="ag_segment",
-        )
+        segment_filtre_ag = st.selectbox("Sélectionnez le Segment :", ["Tous les segments"] + ORDRE_SEGMENTS, key="ag_segment")
 
     st.markdown("---")
 
@@ -820,7 +764,7 @@ with onglet_agences:
                 how="left",
             )
             df_ag_vol = df_ag_vol.rename(columns={"Base_2027": "Volume_Annuel"}).drop(columns=["SKU"])
-            if set(segment_filtre_ag) == set(ORDRE_SEGMENTS):
+            if segment_filtre_ag == "Tous les segments":
                 total_general_override = float(df_base["Base_2027"].sum())
         else:
             df_ag_vol = df_ag_vol.merge(
@@ -832,6 +776,8 @@ with onglet_agences:
             df_ag_vol = df_ag_vol.rename(columns={annee_agence: "Volume_Annuel"}).drop(columns=["SKU"])
         df_ag_vol["Volume_Annuel"] = df_ag_vol["Volume_Annuel"].fillna(0.0)
         df_ag_vol["Volume"] = df_ag_vol["Volume_Annuel"] * df_ag_vol["Poids_Mois"]
+        df_ag_vol["Agence"] = "Toutes les agences"
+        agences_a_afficher = ["Toutes les agences"]
     else:
         df_ag_vol = df_dispatch_base[df_dispatch_base["Agence"] == agence_filtre].copy()
         df_ag_vol = df_ag_vol.merge(
@@ -843,35 +789,32 @@ with onglet_agences:
         df_ag_vol = df_ag_vol.rename(columns={annee_agence: "Volume_Annuel"}).drop(columns=["SKU"])
         df_ag_vol["Volume_Annuel"] = df_ag_vol["Volume_Annuel"].fillna(0.0)
         df_ag_vol["Volume"] = df_ag_vol["Volume_Annuel"] * df_ag_vol["Poids_Dispatch"]
+        agences_a_afficher = [agence_filtre]
 
-    if segment_filtre_ag:
-        df_ag_vol = df_ag_vol[df_ag_vol["Segment"].isin(segment_filtre_ag)]
+    if segment_filtre_ag != "Tous les segments":
+        df_ag_vol = df_ag_vol[df_ag_vol["Segment"] == segment_filtre_ag]
 
-    if not segment_filtre_ag:
-        st.info("Veuillez sélectionner au moins un segment.")
-    elif df_ag_vol.empty:
+    if df_ag_vol.empty:
         st.warning("Aucune donnée pour ces filtres.")
     else:
-        st.markdown(
-            generer_html_agences_par_mois(df_ag_vol, segment_filtre_ag, total_general_override=total_general_override),
-            unsafe_allow_html=True,
-        )
+        st.markdown(generer_html_agences_par_mois(df_ag_vol, agences_a_afficher, total_general_override=total_general_override), unsafe_allow_html=True)
 
-        df_graph_mois = (
+        st.markdown("---")
+        df_g_mois = (
             df_ag_vol.groupby(["Mois", "Segment"], as_index=False)["Volume"]
             .sum()
             .sort_values("Mois")
         )
-        fig_mois_ag = px.bar(
-            df_graph_mois,
+        fig_g_mois = px.bar(
+            df_g_mois,
             x="Mois",
             y="Volume",
             color="Segment",
             barmode="stack",
-            title=f"Profil Mensuel des Volumes ({annee_agence} — {agence_filtre})",
-            text_auto=".2s",
+            color_discrete_map=COULEURS_SEGMENTS,
+            category_orders={"Segment": ORDRE_SEGMENTS},
         )
-        st.plotly_chart(fig_mois_ag, use_container_width=True)
+        st.plotly_chart(styler_graphe(fig_g_mois, f"Répartition Mensuelle des Volumes ({annee_agence} — {agence_filtre})", "Volume (hl)"), use_container_width=True)
 
 
 # #####################################################
@@ -896,18 +839,20 @@ with onglet_dispatch:
     st.markdown(f"#### 📊 Volume dispatché par Agence et par Mois pour {annee_dispatch}")
     st.dataframe(df_pivot_wide.style.format("{:,.0f}").background_gradient(cmap="Blues", axis=None), use_container_width=True)
 
-    df_graph_ag_tot = (
-        df_pivot_wide.reset_index()
-        .sort_values("Total Annuel", ascending=False)
+    df_g_ag = (
+        df_disp_annee.groupby(["Agence", "Segment"], as_index=False)["Volume_Dispatch"]
+        .sum()
     )
-    fig_ag_tot = px.bar(
-        df_graph_ag_tot,
+    fig_g_ag = px.bar(
+        df_g_ag,
         x="Agence",
-        y="Total Annuel",
-        title=f"Volume Annuel Dispatché par Agence ({annee_dispatch})",
-        text_auto=".2s",
+        y="Volume_Dispatch",
+        color="Segment",
+        barmode="stack",
+        color_discrete_map=COULEURS_SEGMENTS,
+        category_orders={"Segment": ORDRE_SEGMENTS},
     )
-    st.plotly_chart(fig_ag_tot, use_container_width=True)
+    st.plotly_chart(styler_graphe(fig_g_ag, f"Volume Dispatché par Agence et Segment ({annee_dispatch})", "Volume (hl)"), use_container_width=True)
 
     st.markdown("---")
     st.subheader("📥 Télécharger le Dispatch")
