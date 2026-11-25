@@ -51,12 +51,10 @@ ORDRE_SEGMENTS = ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]
 # BASE DETAILLEE
 # =====================================================
 detail = [
-    # ALCOMIX
     ["Alcomix", "Booster", "Booster Appel-Mix 50CL VER", 21855, 26734, 3250, 0.005],
     ["Alcomix", "Booster", "Booster Tornado 50CL VER VER", 15616, 19235, 3250, 0.005],
     ["Alcomix", "BOTA Fresh", "BOTA Fresh 50 cl VER", 1005, 0, 3225, 0.005],
     ["Alcomix", "Racines", "Racines 33 cl VER", 2220, 0, 2170, 0.0033],
-    # BG - CAPRICE
     ["BG", "Caprice", "Caprice Ananas 100 cl VER", 4386, 4610, 2180, 0.01],
     ["BG", "Caprice", "Caprice Ananas 150 cl PET", 22050, 23158, 3650, 0.015],
     ["BG", "Caprice", "Caprice Ananas 30 cl VER", 4496, 4677, 875, 0.003],
@@ -84,10 +82,8 @@ detail = [
     ["BG", "Caprice", "Caprice Pomme 150 cl PET", 4128, 0, 3650, 0.015],
     ["BG", "Caprice", "Caprice Pomme 30 cl VER", 1595, 0, 875, 0.003],
     ["BG", "Caprice", "Caprice Pomme 50 cl PET", 0, 0, 0, 0.005],
-    # BG - TONIC
     ["BG", "Tonic", "Tonic 100 cl VER", 7958, 8478, 2180, 0.01],
     ["BG", "Tonic", "Tonic 30 cl VER", 17921, 19004, 875, 0.003],
-    # BG - WORLD COLA
     ["BG", "World Cola", "World Cola 100cl VER", 4368, 4555, 2180, 0.01],
     ["BG", "World Cola", "World Cola 100cl WOCO VER", 24276, 25066, 2180, 0.01],
     ["BG", "World Cola", "World Cola 150cl PET", 100927, 101555, 3650, 0.015],
@@ -97,15 +93,12 @@ detail = [
     ["BG", "World Cola", "World Cola 35cl PET", 6866, 8792, 1080, 0.0035],
     ["BG", "World Cola", "World Cola 50cl PET", 54263, 53936, 1465, 0.005],
     ["BG", "World Cola", "World Cola 20L FUT", 281, 278, 54170, 0.2],
-    # BIERES - BEAUFORT
     ["BIERES", "Beaufort", "Beaufort 33 CL CAN", 13986, 14655, 3800, 0.0033],
     ["BIERES", "Beaufort", "Beaufort 33CL VER", 34851, 36111, 2900, 0.0033],
-    # BIERES - FRESH
     ["BIERES", "FRESH", "FRESH 33 cl CAN", 3254, 3771, 2650, 0.0033],
     ["BIERES", "FRESH", "FRESH 33 cl EXPORT CAN", 25, 0, 2107, 0.0033],
     ["BIERES", "FRESH", "THB Fresh 33 cl VER", 1881, 2053, 1900, 0.0033],
     ["BIERES", "FRESH", "THB Fresh 65 cl VER", 35712, 38205, 3000, 0.0065],
-    # BIERES - GOLD
     ["BIERES", "Gold", "Gold 8 50 cl CAN", 1159, 1245, 4500, 0.005],
     ["BIERES", "Gold", "Gold 8 50 cl VER", 8661, 9342, 3200, 0.005],
     ["BIERES", "Gold", "Gold Blanche 33cl VER", 24605, 26461, 2580, 0.0033],
@@ -116,9 +109,7 @@ detail = [
     ["BIERES", "Gold", "Gold Blonde 50 cl VER", 15872, 17066, 3200, 0.005],
     ["BIERES", "Gold", "Gold Blonde 65 cl VER", 58077, 60555, 3600, 0.0065],
     ["BIERES", "Gold", "Gold Blanche 20L FUT", 1464, 1287, 109170, 0.2],
-    # BIERES - QUEEN
     ["BIERES", "Queen", "Queen s 65 cl VER", 153975, 163506, 3000, 0.0065],
-    # BIERES - THB
     ["BIERES", "THB", "THB Pilsener 33 cl VER", 96836, 102631, 1900, 0.0033],
     ["BIERES", "THB", "THB Pilsener 50 cl CAN", 60246, 63913, 3800, 0.005],
     ["BIERES", "THB", "THB Pilsener 65 cl VER", 1513573, 1668377, 3250, 0.0065],
@@ -129,19 +120,15 @@ detail = [
     ["BIERES", "THB", "THB Blanche 20L Export FUT", 47, 0, 64000, 0.2],
     ["BIERES", "THB", "THB Pilsener 30L Export FUT", 602, 0, 141670, 0.3],
     ["BIERES", "THB", "THB 8 20L Export FUT", 40, 0, 62000, 0.2],
-    # EAUX - CRISTAL
     ["EAUX", "Cristal", "Cristal 100 cl VER", 1004, 1113, 2750, 0.01],
     ["EAUX", "Cristal", "Cristal 150 cl PET", 4516, 4634, 4265, 0.015],
     ["EAUX", "Cristal", "Cristal 30 cl VER", 689, 743, 1130, 0.003],
     ["EAUX", "Cristal", "Cristal 50 cl VER", 4206, 4439, 1600, 0.005],
-    # EAUX - CRISTALLINE
     ["EAUX", "Cristalline", "Cristalline 100 cl PET", 272844, 285962, 1550, 0.01],
     ["EAUX", "Cristalline", "Cristalline 200 cl PET", 268234, 273125, 2680, 0.02],
-    # EAUX - EAU VIVE
     ["EAUX", "Eau vive", "Eau vive 150 cl PET", 210612, 211467, 2465, 0.015],
     ["EAUX", "Eau vive", "Eau vive 50 cl PET", 67919, 71556, 1235, 0.005],
     ["EAUX", "Eau vive", "Eau vive 50 cl VER", 364, 2000, 1600, 0.005],
-    # ENERGY
     ["Energy", "FOSA", "FOSA 50 cl CAN", 3265, 15000, 3830, 0.005],
     ["Energy", "XXL", "XXL 30cl BOB VER", 19433, 21385, 1750, 0.003],
     ["Energy", "XXL", "XXL 30cl VER", 571, 764, 1750, 0.003],
@@ -259,81 +246,18 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=
 
     css = """
     <style>
-    .sop-container {
-        max-height: 900px;
-        overflow-y: auto;
-        border: 1px solid #d0d0d0;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        font-size: 13px;
-    }
-    table.sop-table {
-        width: 100%;
-        border-collapse: collapse;
-        text-align: right;
-    }
-    table.sop-table thead th {
-        position: sticky;
-        top: 0;
-        background-color: #262626;
-        color: white;
-        padding: 8px 10px;
-        border: 1px solid #595959;
-        z-index: 2;
-        text-align: center;
-    }
-    table.sop-table td {
-        padding: 5px 10px;
-        border: 1px solid #d9d9d9;
-    }
-    .row-total td {
-        background-color: #FFF2CC;
-        color: #000000;
-        font-weight: bold;
-        font-size: 14px;
-    }
-    .row-eco-total td {
-        background-color: #FFF2CC;
-        color: #000000;
-        font-weight: bold;
-        font-size: 13px;
-        font-style: italic;
-    }
-    .cell-seg-side {
-        background-color: #C00000;
-        color: white;
-        font-weight: bold;
-        text-align: center;
-        vertical-align: middle;
-        font-size: 15px;
-        width: 110px;
-    }
-    .row-seg-top td {
-        background-color: #C00000;
-        color: white;
-        font-weight: bold;
-    }
-    .cell-marque-side {
-        background-color: #F8CBAD;
-        color: #000000;
-        font-weight: bold;
-        text-align: center;
-        vertical-align: middle;
-        width: 130px;
-    }
-    .row-marque-top td {
-        background-color: #F8CBAD;
-        color: #000000;
-        font-weight: bold;
-    }
-    .cell-sku {
-        background-color: #FFFFFF;
-        color: #1a1a1a;
-        text-align: left;
-    }
-    .cell-val {
-        background-color: #FFFFFF;
-        color: #1a1a1a;
-    }
+    .sop-container { max-height: 900px; overflow-y: auto; border: 1px solid #d0d0d0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 13px; }
+    table.sop-table { width: 100%; border-collapse: collapse; text-align: right; }
+    table.sop-table thead th { position: sticky; top: 0; background-color: #262626; color: white; padding: 8px 10px; border: 1px solid #595959; z-index: 2; text-align: center; }
+    table.sop-table td { padding: 5px 10px; border: 1px solid #d9d9d9; }
+    .row-total td { background-color: #FFF2CC; color: #000000; font-weight: bold; font-size: 14px; }
+    .row-eco-total td { background-color: #FFF2CC; color: #000000; font-weight: bold; font-size: 13px; font-style: italic; }
+    .cell-seg-side { background-color: #C00000; color: white; font-weight: bold; text-align: center; vertical-align: middle; font-size: 15px; width: 110px; }
+    .row-seg-top td { background-color: #C00000; color: white; font-weight: bold; }
+    .cell-marque-side { background-color: #F8CBAD; color: #000000; font-weight: bold; text-align: center; vertical-align: middle; width: 130px; }
+    .row-marque-top td { background-color: #F8CBAD; color: #000000; font-weight: bold; }
+    .cell-sku { background-color: #FFFFFF; color: #1a1a1a; text-align: left; }
+    .cell-val { background-color: #FFFFFF; color: #1a1a1a; }
     </style>
     """
 
@@ -344,44 +268,35 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=
         html.append(f"<th>{annee}</th>")
     html.append("</tr></thead><tbody>")
 
-    # Ligne Total (Haut)
     html.append('<tr class="row-total">')
     html.append(f'<td colspan="3" style="text-align:center;">{label_total}</td>')
     for annee in cols_annees:
         html.append(f"<td>{fmt_val(df_sub[annee].sum())}</td>")
     html.append("</tr>")
 
-    # Données
     for segment in ORDRE_SEGMENTS:
         if segment not in segments_cibles:
             continue
         seg_data = df_sub[df_sub["Segment"] == segment]
         if len(seg_data) == 0:
             continue
-
         marques = seg_data["Marque"].unique()
-        total_rows_seg = 1 + sum(
-            1 + len(seg_data[seg_data["Marque"] == m]) for m in marques
-        )
-
+        total_rows_seg = 1 + sum(1 + len(seg_data[seg_data["Marque"] == m]) for m in marques)
         html.append('<tr class="row-seg-top">')
         html.append(f'<td rowspan="{total_rows_seg}" class="cell-seg-side">{segment}</td>')
         html.append(f'<td colspan="2" style="text-align:center;">{segment}</td>')
         for annee in cols_annees:
             html.append(f"<td>{fmt_val(seg_data[annee].sum())}</td>")
         html.append("</tr>")
-
         for marque in marques:
             marq_data = seg_data[seg_data["Marque"] == marque]
             total_rows_marque = 1 + len(marq_data)
-
             html.append('<tr class="row-marque-top">')
             html.append(f'<td rowspan="{total_rows_marque}" class="cell-marque-side">{marque}</td>')
             html.append('<td style="text-align:left;"></td>')
             for annee in cols_annees:
                 html.append(f"<td>{fmt_val(marq_data[annee].sum())}</td>")
             html.append("</tr>")
-
             for _, row in marq_data.iterrows():
                 html.append("<tr>")
                 html.append(f'<td class="cell-sku">{row["SKU"]}</td>')
@@ -389,11 +304,9 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=
                     html.append(f'<td class="cell-val">{fmt_val(row[annee])}</td>')
                 html.append("</tr>")
 
-    # Ligne Évolution (Bas)
     if afficher_evo:
         html.append('<tr class="row-eco-total">')
         html.append('<td colspan="3" style="text-align:center;">Évolution vs N-1 (%)</td>')
-        
         for i, annee in enumerate(cols_annees):
             if i == 0:
                 html.append("<td>-</td>")
@@ -412,21 +325,17 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=
 
 def ecrire_feuille_fusionnee_excel(writer, sheet_title, df_source, cols_annees, afficher_evo=False):
     ws = writer.book.create_sheet(title=sheet_title)
-
     fill_header = PatternFill(start_color="262626", end_color="262626", fill_type="solid")
     fill_total = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
     fill_seg = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
     fill_marque = PatternFill(start_color="F8CBAD", end_color="F8CBAD", fill_type="solid")
-
     font_header = Font(bold=True, color="FFFFFF")
     font_total = Font(bold=True, color="000000", size=11)
     font_seg = Font(bold=True, color="FFFFFF", size=11)
     font_marque = Font(bold=True, color="000000")
     font_sku = Font(color="000000")
-
     thin = Side(border_style="thin", color="BFBFBF")
     border_cell = Border(left=thin, right=thin, top=thin, bottom=thin)
-
     align_center = Alignment(horizontal="center", vertical="center")
     align_left = Alignment(horizontal="left", vertical="center")
     align_right = Alignment(horizontal="right", vertical="center")
@@ -434,142 +343,60 @@ def ecrire_feuille_fusionnee_excel(writer, sheet_title, df_source, cols_annees, 
     ws.cell(row=1, column=1, value="Segment / Marque / SKU")
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=3)
     for col_i in range(1, 4):
-        c = ws.cell(row=1, column=col_i)
-        c.fill = fill_header
-        c.font = font_header
-        c.alignment = align_center
-        c.border = border_cell
-
+        c = ws.cell(row=1, column=col_i); c.fill = fill_header; c.font = font_header; c.alignment = align_center; c.border = border_cell
     for idx_a, annee in enumerate(cols_annees, start=4):
-        c = ws.cell(row=1, column=idx_a, value=annee)
-        c.fill = fill_header
-        c.font = font_header
-        c.alignment = align_center
-        c.border = border_cell
+        c = ws.cell(row=1, column=idx_a, value=annee); c.fill = fill_header; c.font = font_header; c.alignment = align_center; c.border = border_cell
 
     curr_row = 2
     ws.cell(row=curr_row, column=1, value="TOTAL ANNEE")
     ws.merge_cells(start_row=curr_row, start_column=1, end_row=curr_row, end_column=3)
     for col_i in range(1, 4):
-        c = ws.cell(row=curr_row, column=col_i)
-        c.fill = fill_total
-        c.font = font_total
-        c.alignment = align_center
-        c.border = border_cell
-
+        c = ws.cell(row=curr_row, column=col_i); c.fill = fill_total; c.font = font_total; c.alignment = align_center; c.border = border_cell
     for idx_a, annee in enumerate(cols_annees, start=4):
-        c = ws.cell(row=curr_row, column=idx_a, value=float(df_source[annee].sum()))
-        c.fill = fill_total
-        c.font = font_total
-        c.alignment = align_right
-        c.number_format = "#,##0"
-        c.border = border_cell
-
+        c = ws.cell(row=curr_row, column=idx_a, value=float(df_source[annee].sum())); c.fill = fill_total; c.font = font_total; c.alignment = align_right; c.number_format = "#,##0"; c.border = border_cell
     curr_row += 1
 
     for segment in ORDRE_SEGMENTS:
         seg_data = df_source[df_source["Segment"] == segment]
-        if len(seg_data) == 0:
-            continue
-
+        if len(seg_data) == 0: continue
         seg_start_row = curr_row
-
         ws.cell(row=curr_row, column=2, value=segment)
         ws.merge_cells(start_row=curr_row, start_column=2, end_row=curr_row, end_column=3)
         for col_i in range(2, 4):
-            c = ws.cell(row=curr_row, column=col_i)
-            c.fill = fill_seg
-            c.font = font_seg
-            c.alignment = align_center
-            c.border = border_cell
-
+            c = ws.cell(row=curr_row, column=col_i); c.fill = fill_seg; c.font = font_seg; c.alignment = align_center; c.border = border_cell
         for idx_a, annee in enumerate(cols_annees, start=4):
-            c = ws.cell(row=curr_row, column=idx_a, value=float(seg_data[annee].sum()))
-            c.fill = fill_seg
-            c.font = font_seg
-            c.alignment = align_right
-            c.number_format = "#,##0"
-            c.border = border_cell
-
+            c = ws.cell(row=curr_row, column=idx_a, value=float(seg_data[annee].sum())); c.fill = fill_seg; c.font = font_seg; c.alignment = align_right; c.number_format = "#,##0"; c.border = border_cell
         curr_row += 1
-
         for marque in seg_data["Marque"].unique():
             marq_data = seg_data[seg_data["Marque"] == marque]
             marq_start_row = curr_row
-
-            c_sku_empty = ws.cell(row=curr_row, column=3, value="")
-            c_sku_empty.fill = fill_marque
-            c_sku_empty.border = border_cell
-
+            c_sku_empty = ws.cell(row=curr_row, column=3, value=""); c_sku_empty.fill = fill_marque; c_sku_empty.border = border_cell
             for idx_a, annee in enumerate(cols_annees, start=4):
-                c = ws.cell(row=curr_row, column=idx_a, value=float(marq_data[annee].sum()))
-                c.fill = fill_marque
-                c.font = font_marque
-                c.alignment = align_right
-                c.number_format = "#,##0"
-                c.border = border_cell
-
+                c = ws.cell(row=curr_row, column=idx_a, value=float(marq_data[annee].sum())); c.fill = fill_marque; c.font = font_marque; c.alignment = align_right; c.number_format = "#,##0"; c.border = border_cell
             curr_row += 1
-
             for _, row in marq_data.iterrows():
-                c_sku = ws.cell(row=curr_row, column=3, value=row["SKU"])
-                c_sku.font = font_sku
-                c_sku.alignment = align_left
-                c_sku.border = border_cell
-
+                c_sku = ws.cell(row=curr_row, column=3, value=row["SKU"]); c_sku.font = font_sku; c_sku.alignment = align_left; c_sku.border = border_cell
                 for idx_a, annee in enumerate(cols_annees, start=4):
-                    val = float(row[annee])
-                    c = ws.cell(row=curr_row, column=idx_a, value=val if val != 0 else None)
-                    c.font = font_sku
-                    c.alignment = align_right
-                    c.number_format = "#,##0"
-                    c.border = border_cell
-
+                    val = float(row[annee]); c = ws.cell(row=curr_row, column=idx_a, value=val if val != 0 else None); c.font = font_sku; c.alignment = align_right; c.number_format = "#,##0"; c.border = border_cell
                 curr_row += 1
-
             marq_end_row = curr_row - 1
             ws.cell(row=marq_start_row, column=2, value=marque)
             if marq_end_row > marq_start_row:
-                ws.merge_cells(
-                    start_row=marq_start_row,
-                    start_column=2,
-                    end_row=marq_end_row,
-                    end_column=2,
-                )
+                ws.merge_cells(start_row=marq_start_row, start_column=2, end_row=marq_end_row, end_column=2)
             for r_i in range(marq_start_row, marq_end_row + 1):
-                c = ws.cell(row=r_i, column=2)
-                c.fill = fill_marque
-                c.font = font_marque
-                c.alignment = align_center
-                c.border = border_cell
-
+                c = ws.cell(row=r_i, column=2); c.fill = fill_marque; c.font = font_marque; c.alignment = align_center; c.border = border_cell
         seg_end_row = curr_row - 1
         ws.cell(row=seg_start_row, column=1, value=segment)
         if seg_end_row > seg_start_row:
-            ws.merge_cells(
-                start_row=seg_start_row,
-                start_column=1,
-                end_row=seg_end_row,
-                end_column=1,
-            )
+            ws.merge_cells(start_row=seg_start_row, start_column=1, end_row=seg_end_row, end_column=1)
         for r_i in range(seg_start_row, seg_end_row + 1):
-            c = ws.cell(row=r_i, column=1)
-            c.fill = fill_seg
-            c.font = font_seg
-            c.alignment = align_center
-            c.border = border_cell
+            c = ws.cell(row=r_i, column=1); c.fill = fill_seg; c.font = font_seg; c.alignment = align_center; c.border = border_cell
 
-    # Ligne évolution
     if afficher_evo:
         ws.cell(row=curr_row, column=1, value="Évolution (%)")
         ws.merge_cells(start_row=curr_row, start_column=1, end_row=curr_row, end_column=3)
         for col_i in range(1, 4):
-            c = ws.cell(row=curr_row, column=col_i)
-            c.fill = fill_total
-            c.font = font_total
-            c.alignment = align_center
-            c.border = border_cell
-
+            c = ws.cell(row=curr_row, column=col_i); c.fill = fill_total; c.font = font_total; c.alignment = align_center; c.border = border_cell
         for idx_a, annee in enumerate(cols_annees, start=4):
             if idx_a == 4:
                 c = ws.cell(row=curr_row, column=idx_a, value="-")
@@ -578,13 +405,8 @@ def ecrire_feuille_fusionnee_excel(writer, sheet_title, df_source, cols_annees, 
                 v_curr = df_source[annee].sum()
                 v_prev = df_source[an_prev].sum()
                 taux = ((v_curr - v_prev) / v_prev) if v_prev > 0 else 0
-                c = ws.cell(row=curr_row, column=idx_a, value=taux)
-                c.number_format = "+0.0%;-0.0%;0.0%"
-                
-            c.fill = fill_total
-            c.font = font_total
-            c.alignment = align_right
-            c.border = border_cell
+                c = ws.cell(row=curr_row, column=idx_a, value=taux); c.number_format = "+0.0%;-0.0%;0.0%"
+            c.fill = fill_total; c.font = font_total; c.alignment = align_right; c.border = border_cell
         curr_row += 1
 
     ws.column_dimensions["A"].width = 14
@@ -970,6 +792,15 @@ with onglet_ca:
 
     seg_filtre_prix = st.selectbox("🔍 Filtrer la grille des Prix par Segment :", options=["Tous les segments"] + ORDRE_SEGMENTS, key="sel_seg_prix")
     df_prix_view = st.session_state.prix_skus.copy()
+    
+    # --- NOUVEAU : Diagnostic visuel FOSA 2026 ---
+    fosa_row = df_prix_view[df_prix_view["SKU"] == "FOSA 50 cl CAN"]
+    vol_fosa = 3265
+    conv_fosa = 0.005
+    prix_fosa = fosa_row["2026"].values[0] if not fosa_row.empty else 3830
+    ca_fosa = (vol_fosa / conv_fosa) * prix_fosa
+    st.info(f"🧪 **Test de calcul (FOSA 2026) :** {vol_fosa:,.0f} hl / {conv_fosa} hl = {vol_fosa/conv_fosa:,.0f} unités. CA = {vol_fosa/conv_fosa:,.0f} × {prix_fosa:,.0f} Ar = **{ca_fosa:,.0f} Ar**")
+    
     if seg_filtre_prix != "Tous les segments":
         df_prix_view = df_prix_view[df_prix_view["Segment"] == seg_filtre_prix]
     col_cfg_prix = {
