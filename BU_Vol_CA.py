@@ -137,12 +137,6 @@ detail = [
 
 df_base = pd.DataFrame(detail, columns=["Segment", "Marque", "SKU", "2026", "Base_2027", "Prix_2026_Fixe", "Contenance_hl"])
 
-# Ajustement exact de la base 2027 pour correspondre aux totaux de référence (4 600 000 hl)
-df_base.loc[df_base["SKU"] == "Booster Tornado 50CL VER VER", "Base_2027"] = 19234
-df_base.loc[df_base["SKU"] == "Caprice Bonbon Anglais 150 cl PET", "Base_2027"] = 311525 - 1663
-df_base.loc[df_base["SKU"] == "THB Pilsener 65 cl VER", "Base_2027"] = 1668377 + 600
-df_base.loc[df_base["SKU"] == "Eau vive 150 cl PET", "Base_2027"] = 211467 + 1054
-
 df_base["Vol_Segment_2027"] = df_base.groupby("Segment")["Base_2027"].transform("sum")
 df_base["Vol_Marque_2027"] = df_base.groupby(["Segment", "Marque"])["Base_2027"].transform("sum")
 df_base["Poids_Marque_Init"] = np.where(df_base["Vol_Segment_2027"] > 0, (df_base["Vol_Marque_2027"] / df_base["Vol_Segment_2027"]) * 100.0, 0.0)
@@ -201,13 +195,11 @@ def charger_poids_2027(filepath="Vol par AG.xlsx"):
     df_2027["Mois"] = pd.to_numeric(df_2027["Mois"], errors="coerce").fillna(0).astype(int).astype(str).str.zfill(2)
     df_2027["Valeur"] = pd.to_numeric(df_2027["Valeur"], errors="coerce").fillna(0.0)
 
-    # 1) Poids mensuel de chaque article (somme des 12 mois = 1 par article)
     art_m = df_2027.groupby(["Segment", "Marque", "Article", "Mois"], as_index=False)["Valeur"].sum()
     art_tot = art_m.groupby(["Segment", "Marque", "Article"])["Valeur"].transform("sum")
     art_m["Poids_Mois"] = np.where(art_tot > 0, art_m["Valeur"] / art_tot, 0.0)
     df_poids_mois = art_m[["Segment", "Marque", "Article", "Mois", "Poids_Mois"]]
 
-    # 2) Poids détaillé par (Agence, Mois) pour chaque article
     art_totals = df_2027.groupby(["Segment", "Marque", "Article"])["Valeur"].transform("sum")
     df_2027["Poids_Dispatch"] = np.where(art_totals > 0, df_2027["Valeur"] / art_totals, 0.0)
     df_poids_ag_mois = (
@@ -310,7 +302,7 @@ def generer_html_agences_par_mois(df_source, segments_cibles):
     """Génère un tableau matriciel Segment / Marque / Article par Mois (01 à 12) + Total général."""
     df_filtre = df_source[df_source["Segment"].isin(segments_cibles)]
     df_grp = (
-        df_filtre.groupby(["Segment", "Marque", "Article", "Mois"], as_index=False)["Volume"]
+        df_filtre.groupby(["Segment", "Marque", "Article", "Mois"], as_index=False, sort=False)["Volume"]
         .sum()
     )
 
@@ -417,7 +409,7 @@ def generer_html_agences_par_mois(df_source, segments_cibles):
             html.append(f"<td>{fmt_val(val_m)}</td>")
         html.append(f'<td class="tcd-total-col">{fmt_val(seg_total)}</td></tr>')
 
-        for marque in sorted(df_seg["Marque"].unique()):
+        for marque in df_seg["Marque"].unique():
             df_marq = df_seg[df_seg["Marque"] == marque]
             marq_total = df_marq["Volume"].sum()
             html.append(f'<tr class="tcd-marque-row"><td class="tcd-label-marque">{marque}</td>')
@@ -426,7 +418,7 @@ def generer_html_agences_par_mois(df_source, segments_cibles):
                 html.append(f"<td>{fmt_val(val_m)}</td>")
             html.append(f'<td class="tcd-total-col">{fmt_val(marq_total)}</td></tr>')
 
-            for article in sorted(df_marq["Article"].unique()):
+            for article in df_marq["Article"].unique():
                 df_art = df_marq[df_marq["Article"] == article]
                 art_total = df_art["Volume"].sum()
                 html.append(f'<tr class="tcd-art-row"><td class="tcd-label-art">{article}</td>')
