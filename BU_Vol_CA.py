@@ -195,15 +195,15 @@ def charger_poids_2027(filepath="Vol par AG.xlsx"):
     df_2027["Mois"] = pd.to_numeric(df_2027["Mois"], errors="coerce").fillna(0).astype(int).astype(str).str.zfill(2)
     df_2027["Valeur"] = pd.to_numeric(df_2027["Valeur"], errors="coerce").fillna(0.0)
 
-    art_m = df_2027.groupby(["Segment", "Marque", "Article", "Mois"], as_index=False)["Valeur"].sum()
-    art_tot = art_m.groupby(["Segment", "Marque", "Article"])["Valeur"].transform("sum")
+    art_m = df_2027.groupby(["Segment", "Marque", "Article", "Mois"], as_index=False, sort=False)["Valeur"].sum()
+    art_tot = art_m.groupby(["Segment", "Marque", "Article"], sort=False)["Valeur"].transform("sum")
     art_m["Poids_Mois"] = np.where(art_tot > 0, art_m["Valeur"] / art_tot, 0.0)
     df_poids_mois = art_m[["Segment", "Marque", "Article", "Mois", "Poids_Mois"]]
 
-    art_totals = df_2027.groupby(["Segment", "Marque", "Article"])["Valeur"].transform("sum")
+    art_totals = df_2027.groupby(["Segment", "Marque", "Article"], sort=False)["Valeur"].transform("sum")
     df_2027["Poids_Dispatch"] = np.where(art_totals > 0, df_2027["Valeur"] / art_totals, 0.0)
     df_poids_ag_mois = (
-        df_2027.groupby(["Segment", "Marque", "Article", "Agence", "Mois"], as_index=False)["Poids_Dispatch"]
+        df_2027.groupby(["Segment", "Marque", "Article", "Agence", "Mois"], as_index=False, sort=False)["Poids_Dispatch"]
         .sum()
     )
 
@@ -298,7 +298,7 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=
     html.append("</tbody></table></div>")
     return "".join(html)
 
-def generer_html_agences_par_mois(df_source, segments_cibles):
+def generer_html_agences_par_mois(df_source, segments_cibles, total_general_override=None):
     """Génère un tableau matriciel Segment / Marque / Article par Mois (01 à 12) + Total général."""
     df_filtre = df_source[df_source["Segment"].isin(segments_cibles)]
     df_grp = (
@@ -388,7 +388,7 @@ def generer_html_agences_par_mois(df_source, segments_cibles):
         html.append(f"<th>{m}</th>")
     html.append("<th>Total général</th></tr></thead><tbody>")
 
-    grand_total = df_grp["Volume"].sum()
+    grand_total = total_general_override if total_general_override is not None else df_grp["Volume"].sum()
     html.append('<tr class="tcd-grand-total"><td class="tcd-label-seg">Total général</td>')
     for m in MOIS:
         val_m = df_grp[df_grp["Mois"] == m]["Volume"].sum()
@@ -613,6 +613,23 @@ with onglet_vol:
     else:
         st.markdown(generer_html_fusionne(df_detail, ANNEES_ALL, segments_selectionnes_vol, afficher_evo=False), unsafe_allow_html=True)
 
+        df_graph_vol = (
+            df_detail[df_detail["Segment"].isin(segments_selectionnes_vol)]
+            .groupby("Segment", as_index=False)[ANNEES_ALL]
+            .sum()
+            .melt(id_vars="Segment", value_vars=ANNEES_ALL, var_name="Année", value_name="Volume (hl)")
+        )
+        fig_vol = px.bar(
+            df_graph_vol,
+            x="Année",
+            y="Volume (hl)",
+            color="Segment",
+            barmode="stack",
+            title="Évolution des Volumes par Segment (2026–2031)",
+            text_auto=".2s",
+        )
+        st.plotly_chart(fig_vol, use_container_width=True)
+
 
 # #####################################################
 # ONGLET 2 : CALCUL CHIFFRE D'AFFAIRES (CA EN AR)
@@ -752,6 +769,22 @@ with onglet_ca:
     else:
         st.markdown(generer_html_fusionne(df_ca, ANNEES_ALL, segments_selectionnes_ca, afficher_evo=True), unsafe_allow_html=True)
 
+        df_graph_ca = (
+            df_ca[df_ca["Segment"].isin(segments_selectionnes_ca)]
+            .groupby("Segment", as_index=False)[ANNEES_ALL]
+            .sum()
+            .melt(id_vars="Segment", value_vars=ANNEES_ALL, var_name="Année", value_name="CA (Ar)")
+        )
+        fig_ca = px.line(
+            df_graph_ca,
+            x="Année",
+            y="CA (Ar)",
+            color="Segment",
+            markers=True,
+            title="Évolution du Chiffre d'Affaires par Segment (2026–2031)",
+        )
+        st.plotly_chart(fig_ca, use_container_width=True)
+
 
 # #####################################################
 # ONGLET 3 : VOLUME PAR AGENCE (FILTRES INTERACTIFS)
@@ -776,6 +809,7 @@ with onglet_agences:
 
     st.markdown("---")
 
+    total_general_override = None
     if agence_filtre == "Toutes les agences":
         df_ag_vol = df_poids_mois.copy()
         if annee_agence == "2027":
@@ -786,6 +820,8 @@ with onglet_agences:
                 how="left",
             )
             df_ag_vol = df_ag_vol.rename(columns={"Base_2027": "Volume_Annuel"}).drop(columns=["SKU"])
+            if set(segment_filtre_ag) == set(ORDRE_SEGMENTS):
+                total_general_override = float(df_base["Base_2027"].sum())
         else:
             df_ag_vol = df_ag_vol.merge(
                 df_detail[["Segment", "Marque", "SKU", annee_agence]],
@@ -817,9 +853,25 @@ with onglet_agences:
         st.warning("Aucune donnée pour ces filtres.")
     else:
         st.markdown(
-            generer_html_agences_par_mois(df_ag_vol, segment_filtre_ag),
+            generer_html_agences_par_mois(df_ag_vol, segment_filtre_ag, total_general_override=total_general_override),
             unsafe_allow_html=True,
         )
+
+        df_graph_mois = (
+            df_ag_vol.groupby(["Mois", "Segment"], as_index=False)["Volume"]
+            .sum()
+            .sort_values("Mois")
+        )
+        fig_mois_ag = px.bar(
+            df_graph_mois,
+            x="Mois",
+            y="Volume",
+            color="Segment",
+            barmode="stack",
+            title=f"Profil Mensuel des Volumes ({annee_agence} — {agence_filtre})",
+            text_auto=".2s",
+        )
+        st.plotly_chart(fig_mois_ag, use_container_width=True)
 
 
 # #####################################################
@@ -843,6 +895,19 @@ with onglet_dispatch:
 
     st.markdown(f"#### 📊 Volume dispatché par Agence et par Mois pour {annee_dispatch}")
     st.dataframe(df_pivot_wide.style.format("{:,.0f}").background_gradient(cmap="Blues", axis=None), use_container_width=True)
+
+    df_graph_ag_tot = (
+        df_pivot_wide.reset_index()
+        .sort_values("Total Annuel", ascending=False)
+    )
+    fig_ag_tot = px.bar(
+        df_graph_ag_tot,
+        x="Agence",
+        y="Total Annuel",
+        title=f"Volume Annuel Dispatché par Agence ({annee_dispatch})",
+        text_auto=".2s",
+    )
+    st.plotly_chart(fig_ag_tot, use_container_width=True)
 
     st.markdown("---")
     st.subheader("📥 Télécharger le Dispatch")
