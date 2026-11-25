@@ -222,63 +222,143 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=
     html.append("</tbody></table></div>")
     return "".join(html)
 
-def generer_html_agences_par_mois(df_source, agences_cibles):
-    """Génère un tableau dépliable qui montre les mois pour une ou plusieurs agences"""
-    df_grp = df_source[df_source["Agence"].isin(agences_cibles)].groupby(["Segment", "Marque", "Article", "Agence", "Mois"])["Volume"].sum().reset_index()
-    
-    css = """<style>.ag-container{font-family:'Segoe UI',Tahoma,sans-serif;font-size:13px}details{margin-bottom:5px;border:1px solid #d0d0d0;border-radius:4px}summary{padding:8px 12px;background-color:#f8f9fa;cursor:pointer;font-weight:bold;color:#333;border-bottom:1px solid #d0d0d0}summary:hover{background-color:#e9ecef}summary::-webkit-details-marker{display:none}summary::before{content:'▶';display:inline-block;margin-right:10px;font-size:10px;color:#666;transition:transform 0.2s}details[open]>summary::before{transform:rotate(90deg)}.ag-table{width:100%;border-collapse:collapse;text-align:right;margin-top:5px}.ag-table th{background-color:#f1f3f5;padding:6px 10px;border-bottom:2px solid #dee2e6;text-align:center;font-weight:600}.ag-table td{padding:5px 10px;border-bottom:1px solid #eee}.ag-table tr:hover{background-color:#f8f9fa}.ag-row-total td{font-weight:bold;background-color:#fff3cd}</style>"""
-    html = [css, '<div class="ag-container">']
-    
-    # On boucle sur les segments
+def generer_html_agences_par_mois(df_source, agences_cibles, segments_cibles):
+    """Génère un tableau matriciel Segment / Marque / Article par Mois (01 à 12) + Total général."""
+    df_filtre = df_source[
+        (df_source["Agence"].isin(agences_cibles)) &
+        (df_source["Segment"].isin(segments_cibles))
+    ]
+    df_grp = (
+        df_filtre.groupby(["Segment", "Marque", "Article", "Mois"], as_index=False)["Volume"]
+        .sum()
+    )
+
+    css = """
+    <style>
+    .tcd-container {
+        max-height: 850px;
+        overflow: auto;
+        border: 1px solid #2b4c7e;
+        font-family: 'Segoe UI', Tahoma, sans-serif;
+        font-size: 12.5px;
+    }
+    table.tcd-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: right;
+    }
+    table.tcd-table thead th {
+        position: sticky;
+        top: 0;
+        background-color: #1f4e78;
+        color: #ffffff;
+        padding: 7px 8px;
+        border: 1px solid #3a6ea5;
+        z-index: 2;
+        text-align: center;
+        font-weight: 600;
+    }
+    table.tcd-table thead th.col-label {
+        text-align: left;
+        min-width: 260px;
+    }
+    table.tcd-table td {
+        padding: 4px 8px;
+        border: 1px solid #d0d7de;
+        white-space: nowrap;
+    }
+    .tcd-grand-total td {
+        background-color: #16365c;
+        color: #ffffff;
+        font-weight: 700;
+        border-top: 2px solid #0d223a;
+        border-bottom: 2px solid #0d223a;
+    }
+    .tcd-seg-row td {
+        background-color: #2f5597;
+        color: #ffffff;
+        font-weight: 700;
+    }
+    .tcd-marque-row td {
+        background-color: #d9e1f2;
+        color: #111111;
+        font-weight: 700;
+    }
+    .tcd-art-row td {
+        background-color: #ffffff;
+        color: #222222;
+    }
+    .tcd-art-row:hover td {
+        background-color: #f2f6fc;
+    }
+    .tcd-label-seg {
+        text-align: left !important;
+        padding-left: 8px !important;
+    }
+    .tcd-label-marque {
+        text-align: left !important;
+        padding-left: 22px !important;
+    }
+    .tcd-label-art {
+        text-align: left !important;
+        padding-left: 38px !important;
+    }
+    .tcd-total-col {
+        font-weight: 700;
+    }
+    </style>
+    """
+
+    html = [css, '<div class="tcd-container"><table class="tcd-table">']
+    html.append('<thead><tr><th class="col-label">SEGMENTS / Marque / Article</th>')
+    for m in MOIS:
+        html.append(f"<th>{m}</th>")
+    html.append("<th>Total général</th></tr></thead><tbody>")
+
+    # Ligne Total général
+    grand_total = df_grp["Volume"].sum()
+    html.append('<tr class="tcd-grand-total"><td class="tcd-label-seg">Total général</td>')
+    for m in MOIS:
+        val_m = df_grp[df_grp["Mois"] == m]["Volume"].sum()
+        html.append(f"<td>{fmt_val(val_m)}</td>")
+    html.append(f"<td>{fmt_val(grand_total)}</td></tr>")
+
+    # Boucle par Segment
     for segment in ORDRE_SEGMENTS:
+        if segment not in segments_cibles:
+            continue
         df_seg = df_grp[df_grp["Segment"] == segment]
-        if df_seg.empty: continue
-        
+        if df_seg.empty:
+            continue
+
         seg_total = df_seg["Volume"].sum()
-        html.append(f'<details><summary>{segment} (Total : {seg_total:,.0f} hl)</summary>')
-        
-        # Tableau avec les mois en en-tête
-        html.append('<table class="ag-table"><thead><tr><th style="text-align:left;">Marque / Article / Agence</th>')
-        for m in MOIS: html.append(f"<th>{m}</th>")
-        html.append("<th>Total</th></tr></thead><tbody>")
-        
-        # Ligne Total Segment
-        html.append('<tr class="ag-row-total"><td style="text-align:left;">Total Segment</td>')
+        html.append(f'<tr class="tcd-seg-row"><td class="tcd-label-seg">{segment}</td>')
         for m in MOIS:
-            val_mois = df_seg[df_seg["Mois"] == m]["Volume"].sum()
-            html.append(f"<td>{fmt_val(val_mois)}</td>")
-        html.append(f"<td>{fmt_val(seg_total)}</td></tr>")
-        
-        for marque in df_seg["Marque"].unique():
+            val_m = df_seg[df_seg["Mois"] == m]["Volume"].sum()
+            html.append(f"<td>{fmt_val(val_m)}</td>")
+        html.append(f'<td class="tcd-total-col">{fmt_val(seg_total)}</td></tr>')
+
+        # Boucle par Marque
+        for marque in sorted(df_seg["Marque"].unique()):
             df_marq = df_seg[df_seg["Marque"] == marque]
             marq_total = df_marq["Volume"].sum()
-            
-            # Sous-détails par marque
-            html.append(f'<tr><td colspan="{len(MOIS)+2}" style="padding:0;"><details><summary style="background:none;border:none;padding:5px 10px;font-weight:bold;color:#555;">{marque}</summary>')
-            html.append('<table class="ag-table" style="margin:0;"><tbody>')
-            
-            # Ligne Total Marque
-            html.append('<tr class="ag-row-total"><td style="text-align:left;">Total Marque</td>')
+            html.append(f'<tr class="tcd-marque-row"><td class="tcd-label-marque">{marque}</td>')
             for m in MOIS:
-                val_mois = df_marq[df_marq["Mois"] == m]["Volume"].sum()
-                html.append(f"<td>{fmt_val(val_mois)}</td>")
-            html.append(f"<td>{fmt_val(marq_total)}</td></tr>")
-            
-            # Lignes Articles et Agences
-            for article in df_marq["Article"].unique():
+                val_m = df_marq[df_marq["Mois"] == m]["Volume"].sum()
+                html.append(f"<td>{fmt_val(val_m)}</td>")
+            html.append(f'<td class="tcd-total-col">{fmt_val(marq_total)}</td></tr>')
+
+            # Boucle par Article
+            for article in sorted(df_marq["Article"].unique()):
                 df_art = df_marq[df_marq["Article"] == article]
-                for agence in df_art["Agence"].unique():
-                    df_ag = df_art[df_art["Agence"] == agence]
-                    art_ag_total = df_ag["Volume"].sum()
-                    html.append(f'<tr><td style="text-align:left;">{article} - {agence}</td>')
-                    for m in MOIS:
-                        val_m = df_ag[df_ag["Mois"] == m]["Volume"].sum()
-                        html.append(f"<td>{fmt_val(val_m)}</td>")
-                    html.append(f"<td>{fmt_val(art_ag_total)}</td></tr>")
-                    
-            html.append("</tbody></table></details></td></tr>")
-        html.append("</tbody></table></details>")
-    html.append("</div>")
+                art_total = df_art["Volume"].sum()
+                html.append(f'<tr class="tcd-art-row"><td class="tcd-label-art">{article}</td>')
+                for m in MOIS:
+                    val_m = df_art[df_art["Mois"] == m]["Volume"].sum()
+                    html.append(f"<td>{fmt_val(val_m)}</td>")
+                html.append(f'<td class="tcd-total-col">{fmt_val(art_total)}</td></tr>')
+
+    html.append("</tbody></table></div>")
     return "".join(html)
 
 # =====================================================
@@ -557,38 +637,47 @@ with onglet_ca:
 # #####################################################
 with onglet_agences:
     st.subheader("📍 Volumes par Agence & par Mois")
-    
-    # Filtres interactifs
+
     col_ag1, col_ag2, col_ag3 = st.columns(3)
     with col_ag1:
         annee_agence = st.selectbox("Sélectionnez l'Année :", ANNEES, index=0, key="ag_annee")
     with col_ag2:
         agence_filtre = st.selectbox("Sélectionnez l'Agence :", ["Toutes les agences"] + AGENCES, key="ag_agence")
     with col_ag3:
-        segment_filtre_ag = st.selectbox("Sélectionnez le Segment :", ["Tous les segments"] + ORDRE_SEGMENTS, key="ag_segment")
-        
+        segment_filtre_ag = st.multiselect(
+            "Sélectionnez le(s) Segment(s) :",
+            options=ORDRE_SEGMENTS,
+            default=ORDRE_SEGMENTS,
+            key="ag_segment",
+        )
+
     st.markdown("---")
-    
-    # Préparation des données pour l'année choisie
+
     df_ag_vol = df_dispatch_base.copy()
-    # On fusionne avec le volume total de l'article pour l'année sélectionnée
-    df_ag_vol = df_ag_vol.merge(df_detail[["Segment", "Marque", "SKU", annee_agence]], left_on=["Segment", "Marque", "Article"], right_on=["Segment", "Marque", "SKU"], how="left")
+    df_ag_vol = df_ag_vol.merge(
+        df_detail[["Segment", "Marque", "SKU", annee_agence]],
+        left_on=["Segment", "Marque", "Article"],
+        right_on=["Segment", "Marque", "SKU"],
+        how="left",
+    )
     df_ag_vol = df_ag_vol.rename(columns={annee_agence: "Volume_Annuel"}).drop(columns=["SKU"])
-    # Calcul du volume réel dispatché
     df_ag_vol["Volume"] = df_ag_vol["Volume_Annuel"] * df_ag_vol["Poids_Dispatch"]
-    
-    # Application des filtres
+
     if agence_filtre != "Toutes les agences":
         df_ag_vol = df_ag_vol[df_ag_vol["Agence"] == agence_filtre]
-    if segment_filtre_ag != "Tous les segments":
-        df_ag_vol = df_ag_vol[df_ag_vol["Segment"] == segment_filtre_ag]
-        
-    # Affichage du tableau
-    if df_ag_vol.empty:
+    if segment_filtre_ag:
+        df_ag_vol = df_ag_vol[df_ag_vol["Segment"].isin(segment_filtre_ag)]
+
+    if not segment_filtre_ag:
+        st.info("Veuillez sélectionner au moins un segment.")
+    elif df_ag_vol.empty:
         st.warning("Aucune donnée pour ces filtres.")
     else:
         agences_a_afficher = [agence_filtre] if agence_filtre != "Toutes les agences" else AGENCES
-        st.markdown(generer_html_agences_par_mois(df_ag_vol, agences_a_afficher), unsafe_allow_html=True)
+        st.markdown(
+            generer_html_agences_par_mois(df_ag_vol, agences_a_afficher, segment_filtre_ag),
+            unsafe_allow_html=True,
+        )
 
 
 # #####################################################
@@ -642,3 +731,4 @@ with onglet_dispatch:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         type="primary"
     )
+```[cite: 11, 12]
