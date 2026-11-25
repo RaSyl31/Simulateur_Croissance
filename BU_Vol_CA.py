@@ -137,9 +137,25 @@ TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
 # =====================================================
-# DONNEES AGENCES ET DISPATCH
+# DONNEES AGENCES (15 AGENCES) ET DISPATCH
 # =====================================================
-AGENCES = ["01-Tanjombato", "03-Usine-Diego", "04-Tulear", "05-Fianarantsoa", "09-Tamatave", "11-Andranomahery"]
+AGENCES = [
+    "01-Tanjombato",
+    "02-Antsirabe",
+    "03-Usine-Diego",
+    "04-Tulear",
+    "05-Fianarantsoa",
+    "06-Majunga",
+    "07-Sambava",
+    "08-Nosy-Be",
+    "09-Tamatave",
+    "10-Fort-Dauphin",
+    "11-Andranomahery",
+    "12-Morondava",
+    "13-Antsohihy",
+    "14-Sainte-Marie",
+    "15-Manakara",
+]
 MOIS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
 
 np.random.seed(42)
@@ -736,7 +752,7 @@ with onglet_ca:
 # ONGLET 3 : VOLUME PAR AGENCE (FILTRES INTERACTIFS)
 # #####################################################
 with onglet_agences:
-    st.subheader("📍 Volumes par Agence & par Mois")
+    st.subheader("📍 Volumes par Agence & par Mois (15 Agences)")
 
     col_ag1, col_ag2, col_ag3 = st.columns(3)
     with col_ag1:
@@ -764,7 +780,7 @@ with onglet_agences:
         fig_ag = px.bar(
             df_ag_vol.groupby(["Agence", "Segment"], as_index=False)["Volume"].sum(),
             x="Agence", y="Volume", color="Segment", barmode="stack",
-            color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
+            color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS, "Agence": AGENCES},
         )
         st.plotly_chart(styler_graphe(fig_ag, f"Répartition des Volumes par Agence ({annee_agence})", "Volume (hl)"), use_container_width=True)
 
@@ -817,7 +833,12 @@ with onglet_dispatch:
         st.plotly_chart(styler_graphe(fig_disp_mois, f"Évolution Mensuelle du Dispatch ({annee_dispatch})", "Volume (hl)"), use_container_width=True)
 
         df_pivot = df_disp_annee.groupby(["Agence", "Mois"])["Volume_Dispatch"].sum().reset_index()
-        df_pivot_wide = df_pivot.pivot(index="Agence", columns="Mois", values="Volume_Dispatch").reindex(columns=MOIS, fill_value=0.0).fillna(0.0)
+        agences_index = [filtre_agence_disp] if filtre_agence_disp != "Toutes les agences" else AGENCES
+        df_pivot_wide = (
+            df_pivot.pivot(index="Agence", columns="Mois", values="Volume_Dispatch")
+            .reindex(index=agences_index, columns=MOIS, fill_value=0.0)
+            .fillna(0.0)
+        )
         df_pivot_wide["Total Annuel"] = df_pivot_wide.sum(axis=1)
 
         st.markdown(f"#### 📊 Volume dispatché par Agence et par Mois pour {annee_dispatch}")
