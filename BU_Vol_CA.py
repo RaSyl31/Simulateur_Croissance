@@ -143,14 +143,14 @@ SEG_MAP_XL = {"ALCOMIX": "Alcomix", "BG": "BG", "BI": "BIERES", "EAUX": "EAUX", 
 
 @st.cache_data
 def charger_dispatch_depuis_fichier():
-    fichiers_candidats = ["Vol par AG_3.xlsx", "Vol par AG_2.xlsx", "Vol par AG.xlsx"]
+    fichiers_candidats = ["Vol par AG_4.xlsx", "Vol par AG_3.xlsx", "Vol par AG_2.xlsx", "Vol par AG.xlsx"]
     chemin_fichier = next((f for f in fichiers_candidats if os.path.exists(f)), None)
 
     if chemin_fichier is None:
         agences_fallback = [
-            "01-Tanjombato", "03-Usine-Diego", "04-Tulear", "05-Fianarantsoa", "06-Ihosy",
-            "07-Majunga", "08-Manakara", "09-Tamatave", "11-Andranomahery", "12-Antsirabe",
-            "18-Ambanja", "19-Sambava", "21-Nosy-Be", "23-Morondava", "24-Fort-Dauphin",
+            "01-Tanjombato", "11-Andranomahery", "09-Tamatave", "07-Majunga", "12-Antsirabe",
+            "18-Ambanja", "04-Tulear", "08-Manakara", "03-Usine-Diego", "19-Sambava",
+            "21-Nosy-Be", "05-Fianarantsoa", "24-Fort-Dauphin", "06-Ihosy", "23-Morondava",
         ]
         np.random.seed(42)
         rows = []
@@ -171,38 +171,35 @@ def charger_dispatch_depuis_fichier():
     feuille_cible = "Feuil2" if "Feuil2" in xls.sheet_names else ("Feuil1" if "Feuil1" in xls.sheet_names else xls.sheet_names[0])
     df_xl = pd.read_excel(chemin_fichier, sheet_name=feuille_cible)
 
-    df_hl = df_xl[
-        (df_xl["Col/Hl"].astype(str).str.strip() == "Hecto")
-        & (df_xl["Agence"].notna())
-        & (df_xl["Agence"].astype(str).str.strip() != "0")
-    ].copy()
+    cols_requis = ["Année", "Segment", "Marque", "Article", "Agence", "Volume", "Mois"]
+    df_hl = df_xl[cols_requis].copy()
+    df_hl["Agence_Norm"] = df_hl["Agence"].astype(str).str.strip()
+    df_hl = df_hl[df_hl["Agence"].notna() & (df_hl["Agence_Norm"] != "0") & (df_hl["Agence_Norm"] != "")]
 
+    # Tri des 15 agences selon le volume total décroissant dans le fichier
+    df_hl["Volume_Num"] = pd.to_numeric(df_hl["Volume"], errors="coerce").fillna(0.0)
     agences_liste = (
-        df_hl[["AG", "Agence"]]
-        .drop_duplicates()
-        .sort_values("AG")["Agence"]
-        .astype(str)
-        .str.strip()
+        df_hl.groupby("Agence_Norm", as_index=False)["Volume_Num"]
+        .sum()
+        .sort_values("Volume_Num", ascending=False)["Agence_Norm"]
         .tolist()
     )
 
     df_hl["Segment_Norm"] = df_hl["Segment"].astype(str).str.strip().map(SEG_MAP_XL).fillna(df_hl["Segment"].astype(str).str.strip())
     df_hl["Marque_Norm"] = df_hl["Marque"].astype(str).str.strip()
     df_hl["Article_Norm"] = df_hl["Article"].astype(str).str.strip()
-    df_hl["Agence_Norm"] = df_hl["Agence"].astype(str).str.strip()
-    df_hl["Mois_Norm"] = df_hl["Mois"].astype(int).apply(lambda x: f"{x:02d}")
-    df_hl["Valeur_Num"] = pd.to_numeric(df_hl["Valeur"], errors="coerce").fillna(0.0)
+    df_hl["Mois_Norm"] = pd.to_numeric(df_hl["Mois"], errors="coerce").fillna(1).astype(int).apply(lambda x: f"{x:02d}")
 
     grp_art = (
-        df_hl.groupby(["Segment_Norm", "Marque_Norm", "Article_Norm", "Agence_Norm", "Mois_Norm"], as_index=False)["Valeur_Num"]
+        df_hl.groupby(["Segment_Norm", "Marque_Norm", "Article_Norm", "Agence_Norm", "Mois_Norm"], as_index=False)["Volume_Num"]
         .sum()
     )
-    tot_art = grp_art.groupby(["Segment_Norm", "Marque_Norm", "Article_Norm"])["Valeur_Num"].transform("sum")
-    grp_art["Poids_Art"] = np.where(tot_art > 0, grp_art["Valeur_Num"] / tot_art, 0.0)
+    tot_art = grp_art.groupby(["Segment_Norm", "Marque_Norm", "Article_Norm"])["Volume_Num"].transform("sum")
+    grp_art["Poids_Art"] = np.where(tot_art > 0, grp_art["Volume_Num"] / tot_art, 0.0)
 
-    grp_glob = grp_art.groupby(["Agence_Norm", "Mois_Norm"], as_index=False)["Valeur_Num"].sum()
-    tot_glob = grp_glob["Valeur_Num"].sum()
-    grp_glob["Poids_Glob"] = np.where(tot_glob > 0, grp_glob["Valeur_Num"] / tot_glob, 1.0 / (len(agences_liste) * len(MOIS)))
+    grp_glob = grp_art.groupby(["Agence_Norm", "Mois_Norm"], as_index=False)["Volume_Num"].sum()
+    tot_glob = grp_glob["Volume_Num"].sum()
+    grp_glob["Poids_Glob"] = np.where(tot_glob > 0, grp_glob["Volume_Num"] / tot_glob, 1.0 / (len(agences_liste) * len(MOIS)))
 
     poids_art_map = {
         (r["Segment_Norm"], r["Marque_Norm"], r["Article_Norm"], r["Agence_Norm"], r["Mois_Norm"]): r["Poids_Art"]
