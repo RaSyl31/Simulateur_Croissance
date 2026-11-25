@@ -1,10 +1,9 @@
 import io
+import os
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-import streamlit.components.v1 as components
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 # =====================================================
 # CONFIGURATION & EN-TÊTE + ONGLETS FIGÉS
@@ -137,41 +136,118 @@ TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
 # =====================================================
-# DONNEES AGENCES (15 AGENCES) ET DISPATCH
+# CHARGEMENT DES POIDS AGENCES & MOIS DEPUIS LE FICHIER
 # =====================================================
-AGENCES = [
-    "01-Tanjombato",
-    "02-Antsirabe",
-    "03-Usine-Diego",
-    "04-Tulear",
-    "05-Fianarantsoa",
-    "06-Majunga",
-    "07-Sambava",
-    "08-Nosy-Be",
-    "09-Tamatave",
-    "10-Fort-Dauphin",
-    "11-Andranomahery",
-    "12-Morondava",
-    "13-Antsohihy",
-    "14-Sainte-Marie",
-    "15-Manakara",
-]
 MOIS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+SEG_MAP_XL = {"ALCOMIX": "Alcomix", "BG": "BG", "BI": "BIERES", "EAUX": "EAUX", "Energy": "Energy"}
 
-np.random.seed(42)
-dispatch_data = []
-for _, row in df_base.iterrows():
-    if row["Base_2027"] == 0:
-        continue
-    poids_ag = np.random.dirichlet(np.ones(len(AGENCES)), size=1)[0]
-    poids_mois = np.random.dirichlet(np.ones(len(MOIS)), size=1)[0]
-    for i_ag, ag in enumerate(AGENCES):
-        for i_m, m in enumerate(MOIS):
-            dispatch_data.append({
-                "Segment": row["Segment"], "Marque": row["Marque"], "Article": row["SKU"],
-                "Agence": ag, "Mois": m, "Poids_Dispatch": poids_ag[i_ag] * poids_mois[i_m]
-            })
-df_dispatch_base = pd.DataFrame(dispatch_data)
+@st.cache_data
+def charger_dispatch_depuis_fichier():
+    fichiers_candidats = ["Vol par AG_2.xlsx", "Vol par AG.xlsx"]
+    chemin_fichier = next((f for f in fichiers_candidats if os.path.exists(f)), None)
+
+    if chemin_fichier is None:
+        agences_fallback = [
+            "01-Tanjombato", "03-Usine-Diego", "04-Tulear", "05-Fianarantsoa", "06-Ihosy",
+            "07-Majunga", "08-Manakara", "09-Tamatave", "11-Andranomahery", "12-Antsirabe",
+            "18-Ambanja", "19-Sambava", "21-Nosy-Be", "23-Morondava", "24-Fort-Dauphin",
+        ]
+        np.random.seed(42)
+        rows = []
+        for _, r in df_base.iterrows():
+            if r["Base_2027"] == 0:
+                continue
+            p_ag = np.random.dirichlet(np.ones(len(agences_fallback)))
+            p_m = np.random.dirichlet(np.ones(len(MOIS)))
+            for i_a, ag in enumerate(agences_fallback):
+                for i_m, m in enumerate(MOIS):
+                    rows.append({
+                        "Segment": r["Segment"], "Marque": r["Marque"], "Article": r["SKU"],
+                        "Agence": ag, "Mois": m, "Poids_Dispatch": p_ag[i_a] * p_m[i_m],
+                    })
+        return agences_fallback, pd.DataFrame(rows)
+
+    df_xl = pd.read_excel(chemin_fichier, sheet_name="Feuil1")
+    df_hl = df_xl[
+        (df_xl["Col/Hl"].astype(str).str.strip() == "Hecto")
+        & (df_xl["Agence"].notna())
+        & (df_xl["Agence"].astype(str).str.strip() != "0")
+    ].copy()
+
+    agences_liste = (
+        df_hl[["AG", "Agence"]]
+        .drop_duplicates()
+        .sort_values("AG")["Agence"]
+        .astype(str)
+        .str.strip()
+        .tolist()
+    )
+
+    df_hl["Segment_Norm"] = df_hl["Segment"].astype(str).str.strip().map(SEG_MAP_XL).fillna(df_hl["Segment"].astype(str).str.strip())
+    df_hl["Marque_Norm"] = df_hl["Marque"].astype(str).str.strip()
+    df_hl["Article_Norm"] = df_hl["Article"].astype(str).str.strip()
+    df_hl["Agence_Norm"] = df_hl["Agence"].astype(str).str.strip()
+    df_hl["Mois_Norm"] = df_hl["Mois"].astype(int).apply(lambda x: f"{x:02d}")
+    df_hl["Valeur_Num"] = pd.to_numeric(df_hl["Valeur"], errors="coerce").fillna(0.0)
+
+    grp_art = (
+        df_hl.groupby(["Segment_Norm", "Marque_Norm", "Article_Norm", "Agence_Norm", "Mois_Norm"], as_index=False)["Valeur_Num"]
+        .sum()
+    )
+    tot_art = grp_art.groupby(["Segment_Norm", "Marque_Norm", "Article_Norm"])["Valeur_Num"].transform("sum")
+    grp_art["Poids_Art"] = np.where(tot_art > 0, grp_art["Valeur_Num"] / tot_art, 0.0)
+
+    # Profil global de repli (sur les 15 agences x 12 mois) si un SKU n'a pas de volume dans le fichier
+    grp_glob = grp_art.groupby(["Agence_Norm", "Mois_Norm"], as_index=False)["Valeur_Num"].sum()
+    tot_glob = grp_glob["Valeur_Num"].sum()
+    grp_glob["Poids_Glob"] = np.where(tot_glob > 0, grp_glob["Valeur_Num"] / tot_glob, 1.0 / (len(agences_liste) * len(MOIS)))
+
+    poids_art_map = {
+        (r["Segment_Norm"], r["Marque_Norm"], r["Article_Norm"], r["Agence_Norm"], r["Mois_Norm"]): r["Poids_Art"]
+        for _, r in grp_art.iterrows()
+        if r["Poids_Art"] > 0
+    }
+    poids_sku_only_map = {}
+    for (_, _, art, ag, m), p in poids_art_map.items():
+        poids_sku_only_map[(art, ag, m)] = poids_sku_only_map.get((art, ag, m), 0.0) + p
+    # Normaliser par article si doublon
+    sku_sums = {}
+    for (art, _, _), p in poids_sku_only_map.items():
+        sku_sums[art] = sku_sums.get(art, 0.0) + p
+    for k in list(poids_sku_only_map.keys()):
+        s = sku_sums.get(k[0], 0.0)
+        poids_sku_only_map[k] = poids_sku_only_map[k] / s if s > 0 else 0.0
+
+    poids_glob_map = {(r["Agence_Norm"], r["Mois_Norm"]): r["Poids_Glob"] for _, r in grp_glob.iterrows()}
+
+    rows_final = []
+    for _, r in df_base.iterrows():
+        seg = r["Segment"]
+        marq = r["Marque"]
+        sku = r["SKU"]
+        has_exact = any(k[0] == seg and k[1] == marq and k[2] == sku for k in poids_art_map.keys())
+        has_sku = any(k[0] == sku for k in poids_sku_only_map.keys())
+
+        for ag in agences_liste:
+            for m in MOIS:
+                if has_exact:
+                    w = poids_art_map.get((seg, marq, sku, ag, m), 0.0)
+                elif has_sku:
+                    w = poids_sku_only_map.get((sku, ag, m), 0.0)
+                else:
+                    w = poids_glob_map.get((ag, m), 0.0)
+                rows_final.append({
+                    "Segment": seg,
+                    "Marque": marq,
+                    "Article": sku,
+                    "Agence": ag,
+                    "Mois": m,
+                    "Poids_Dispatch": w,
+                })
+
+    return agences_liste, pd.DataFrame(rows_final)
+
+AGENCES, df_dispatch_base = charger_dispatch_depuis_fichier()
 
 # =====================================================
 # INITIALISATION DES SESSION STATES
@@ -752,7 +828,7 @@ with onglet_ca:
 # ONGLET 3 : VOLUME PAR AGENCE (FILTRES INTERACTIFS)
 # #####################################################
 with onglet_agences:
-    st.subheader("📍 Volumes par Agence & par Mois (15 Agences)")
+    st.subheader(f"📍 Volumes par Agence & par Mois ({len(AGENCES)} Agences)")
 
     col_ag1, col_ag2, col_ag3 = st.columns(3)
     with col_ag1:
