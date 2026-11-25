@@ -779,54 +779,77 @@ with onglet_dispatch:
     st.subheader("🚚 Dispatch Détaillé (Agence & Mois)")
     st.caption("Ce tableau détaille la répartition mensuelle et géographique du volume pour l'année sélectionnée, avec possibilité d'exporter les données.")
 
-    annee_dispatch = st.selectbox("Sélectionnez l'année à ventiler :", ANNEES, index=0, key="disp_annee")
+    col_d1, col_d2, col_d3, col_d4 = st.columns(4)
+    with col_d1:
+        annee_dispatch = st.selectbox("Sélectionnez l'année à ventiler :", ANNEES, index=0, key="disp_annee")
+    with col_d2:
+        filtre_seg_disp = st.selectbox("Filtrer par Segment :", ["Tous les segments"] + ORDRE_SEGMENTS, key="disp_seg")
+    marques_disp_opts = (
+        sorted(df_dispatch_base["Marque"].unique().tolist())
+        if filtre_seg_disp == "Tous les segments"
+        else sorted(df_dispatch_base[df_dispatch_base["Segment"] == filtre_seg_disp]["Marque"].unique().tolist())
+    )
+    with col_d3:
+        filtre_marque_disp = st.selectbox("Filtrer par Marque :", ["Toutes les marques"] + marques_disp_opts, key="disp_marque")
+    with col_d4:
+        filtre_agence_disp = st.selectbox("Filtrer par Agence :", ["Toutes les agences"] + AGENCES, key="disp_agence")
 
     df_disp_annee = df_dispatch_base.copy()
     df_disp_annee = df_disp_annee.merge(df_detail[["Segment", "Marque", "SKU", annee_dispatch]], left_on=["Segment", "Marque", "Article"], right_on=["Segment", "Marque", "SKU"], how="left")
     df_disp_annee = df_disp_annee.rename(columns={annee_dispatch: "Volume_Annuel"}).drop(columns=["SKU"])
     df_disp_annee["Volume_Dispatch"] = df_disp_annee["Volume_Annuel"] * df_disp_annee["Poids_Dispatch"]
 
-    df_pivot = df_disp_annee.groupby(["Agence", "Mois"])["Volume_Dispatch"].sum().reset_index()
-    df_pivot_wide = df_pivot.pivot(index="Agence", columns="Mois", values="Volume_Dispatch").fillna(0)
-    df_pivot_wide["Total Annuel"] = df_pivot_wide.sum(axis=1)
+    if filtre_seg_disp != "Tous les segments":
+        df_disp_annee = df_disp_annee[df_disp_annee["Segment"] == filtre_seg_disp]
+    if filtre_marque_disp != "Toutes les marques":
+        df_disp_annee = df_disp_annee[df_disp_annee["Marque"] == filtre_marque_disp]
+    if filtre_agence_disp != "Toutes les agences":
+        df_disp_annee = df_disp_annee[df_disp_annee["Agence"] == filtre_agence_disp]
 
-    fig_disp_mois = px.bar(
-        df_disp_annee.groupby(["Mois", "Segment"], as_index=False)["Volume_Dispatch"].sum().sort_values("Mois"),
-        x="Mois", y="Volume_Dispatch", color="Segment", barmode="stack",
-        color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
-    )
-    st.plotly_chart(styler_graphe(fig_disp_mois, f"Évolution Mensuelle du Dispatch ({annee_dispatch})", "Volume (hl)"), use_container_width=True)
+    if df_disp_annee.empty:
+        st.warning("Aucune donnée disponible pour la combinaison de filtres sélectionnée.")
+    else:
+        fig_disp_mois = px.bar(
+            df_disp_annee.groupby(["Mois", "Segment"], as_index=False)["Volume_Dispatch"].sum().sort_values("Mois"),
+            x="Mois", y="Volume_Dispatch", color="Segment", barmode="stack",
+            color_discrete_map=COULEURS_SEGMENTS, category_orders={"Segment": ORDRE_SEGMENTS},
+        )
+        st.plotly_chart(styler_graphe(fig_disp_mois, f"Évolution Mensuelle du Dispatch ({annee_dispatch})", "Volume (hl)"), use_container_width=True)
 
-    st.markdown(f"#### 📊 Volume dispatché par Agence et par Mois pour {annee_dispatch}")
-    st.dataframe(styler_pivot_dispatch(df_pivot_wide), use_container_width=True)
+        df_pivot = df_disp_annee.groupby(["Agence", "Mois"])["Volume_Dispatch"].sum().reset_index()
+        df_pivot_wide = df_pivot.pivot(index="Agence", columns="Mois", values="Volume_Dispatch").reindex(columns=MOIS, fill_value=0.0).fillna(0.0)
+        df_pivot_wide["Total Annuel"] = df_pivot_wide.sum(axis=1)
 
-    st.markdown("---")
-    st.subheader("📥 Télécharger le Dispatch")
+        st.markdown(f"#### 📊 Volume dispatché par Agence et par Mois pour {annee_dispatch}")
+        st.dataframe(styler_pivot_dispatch(df_pivot_wide), use_container_width=True)
 
-    df_export = df_disp_annee.copy()
-    df_export["Année"] = annee_dispatch
-    df_export["Ag"] = df_export["Agence"].str.extract(r'^(\d+)').astype(int)
-    df_export["Attribut"] = df_export["Mois"] + " Hecto"
-    df_export["Valeur"] = df_export["Volume_Dispatch"]
-    df_export["Col/Hl"] = "Hecto"
-    df_export["Mois_Num"] = df_export["Mois"]
+        st.markdown("---")
+        st.subheader("📥 Télécharger le Dispatch")
 
-    df_export = df_export[["Année", "Segment", "Marque", "Article", "Agence", "Ag", "Attribut", "Valeur", "Col/Hl", "Mois_Num"]]
-    df_export.columns = ["Année", "Segment", "Marque", "Article", "Agence", "AG", "Attribut", "Valeur", "Col/Hl", "Mois"]
+        df_export = df_disp_annee.copy()
+        df_export["Année"] = annee_dispatch
+        df_export["Ag"] = df_export["Agence"].str.extract(r'^(\d+)').astype(int)
+        df_export["Attribut"] = df_export["Mois"] + " Hecto"
+        df_export["Valeur"] = df_export["Volume_Dispatch"]
+        df_export["Col/Hl"] = "Hecto"
+        df_export["Mois_Num"] = df_export["Mois"]
 
-    buffer_disp = io.BytesIO()
-    with pd.ExcelWriter(buffer_disp, engine="openpyxl") as writer_disp:
-        df_export.to_excel(writer_disp, sheet_name=f"Dispatch_{annee_dispatch}", index=False)
-        ws = writer_disp.sheets[f"Dispatch_{annee_dispatch}"]
-        for col in ws.columns:
-            max_length = max([len(str(cell.value)) for cell in col])
-            ws.column_dimensions[col[0].column_letter].width = max(max_length + 2, 12)
+        df_export = df_export[["Année", "Segment", "Marque", "Article", "Agence", "Ag", "Attribut", "Valeur", "Col/Hl", "Mois_Num"]]
+        df_export.columns = ["Année", "Segment", "Marque", "Article", "Agence", "AG", "Attribut", "Valeur", "Col/Hl", "Mois"]
 
-    buffer_disp.seek(0)
-    st.download_button(
-        label="📥 Télécharger le Fichier de Dispatch (Excel)",
-        data=buffer_disp,
-        file_name=f"Dispatch_Volumes_{annee_dispatch}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary"
-    )
+        buffer_disp = io.BytesIO()
+        with pd.ExcelWriter(buffer_disp, engine="openpyxl") as writer_disp:
+            df_export.to_excel(writer_disp, sheet_name=f"Dispatch_{annee_dispatch}", index=False)
+            ws = writer_disp.sheets[f"Dispatch_{annee_dispatch}"]
+            for col in ws.columns:
+                max_length = max([len(str(cell.value)) for cell in col])
+                ws.column_dimensions[col[0].column_letter].width = max(max_length + 2, 12)
+
+        buffer_disp.seek(0)
+        st.download_button(
+            label="📥 Télécharger le Fichier de Dispatch (Excel)",
+            data=buffer_disp,
+            file_name=f"Dispatch_Volumes_{annee_dispatch}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary"
+        )
