@@ -315,7 +315,6 @@ def generer_html_agences_par_mois(df_source, agences_cibles, segments_cibles):
         html.append(f"<th>{m}</th>")
     html.append("<th>Total général</th></tr></thead><tbody>")
 
-    # Ligne Total général
     grand_total = df_grp["Volume"].sum()
     html.append('<tr class="tcd-grand-total"><td class="tcd-label-seg">Total général</td>')
     for m in MOIS:
@@ -323,7 +322,6 @@ def generer_html_agences_par_mois(df_source, agences_cibles, segments_cibles):
         html.append(f"<td>{fmt_val(val_m)}</td>")
     html.append(f"<td>{fmt_val(grand_total)}</td></tr>")
 
-    # Boucle par Segment
     for segment in ORDRE_SEGMENTS:
         if segment not in segments_cibles:
             continue
@@ -338,7 +336,6 @@ def generer_html_agences_par_mois(df_source, agences_cibles, segments_cibles):
             html.append(f"<td>{fmt_val(val_m)}</td>")
         html.append(f'<td class="tcd-total-col">{fmt_val(seg_total)}</td></tr>')
 
-        # Boucle par Marque
         for marque in sorted(df_seg["Marque"].unique()):
             df_marq = df_seg[df_seg["Marque"] == marque]
             marq_total = df_marq["Volume"].sum()
@@ -348,7 +345,6 @@ def generer_html_agences_par_mois(df_source, agences_cibles, segments_cibles):
                 html.append(f"<td>{fmt_val(val_m)}</td>")
             html.append(f'<td class="tcd-total-col">{fmt_val(marq_total)}</td></tr>')
 
-            # Boucle par Article
             for article in sorted(df_marq["Article"].unique()):
                 df_art = df_marq[df_marq["Article"] == article]
                 art_total = df_art["Volume"].sum()
@@ -729,6 +725,5 @@ with onglet_dispatch:
         data=buffer_disp,
         file_name=f"Dispatch_Volumes_{annee_dispatch}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary"
+        type="primary",
     )
-```[cite: 11, 12]
