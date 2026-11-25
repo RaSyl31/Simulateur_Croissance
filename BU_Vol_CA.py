@@ -1,5 +1,4 @@
 import io
-import os
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -29,7 +28,6 @@ st.markdown(
 ANNEES = ["2027", "2028", "2029", "2030", "2031"]
 ANNEES_ALL = ["2026"] + ANNEES
 ORDRE_SEGMENTS = ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]
-MOIS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
 
 COULEURS_SEGMENTS = {
     "Alcomix": "#C00000",
@@ -38,22 +36,6 @@ COULEURS_SEGMENTS = {
     "EAUX": "#0284C7",
     "Energy": "#15803D",
 }
-
-SEGMENT_MAP_EXCEL = {
-    "ALCOMIX": "Alcomix",
-    "BG": "BG",
-    "BI": "BIERES",
-    "BIERES": "BIERES",
-    "EAUX": "EAUX",
-    "ENERGY": "Energy",
-    "Energy": "Energy",
-}
-
-def normaliser_segment(val):
-    if pd.isna(val):
-        return ""
-    s = str(val).strip()
-    return SEGMENT_MAP_EXCEL.get(s, SEGMENT_MAP_EXCEL.get(s.upper(), s))
 
 # =====================================================
 # BASE DETAILLEE
@@ -144,10 +126,14 @@ detail = [
     ["Energy", "XXL", "XXL 35cl PET", 16357, 29578, 2600, 0.0035],
 ]
 
-df_base = pd.DataFrame(detail, columns=["Segment", "Marque", "SKU", "2026", "Base_2027", "Prix_2026_Fixe", "Contenance_hl"])
+df_base = pd.DataFrame(
+    detail,
+    columns=["Segment", "Marque", "SKU", "2026", "Base_2027", "Prix_2026_Fixe", "Contenance_hl"],
+)
 
 df_base["Vol_Segment_2027"] = df_base.groupby("Segment")["Base_2027"].transform("sum")
 df_base["Vol_Marque_2027"] = df_base.groupby(["Segment", "Marque"])["Base_2027"].transform("sum")
+
 df_base["Poids_Marque_Init"] = np.where(df_base["Vol_Segment_2027"] > 0, (df_base["Vol_Marque_2027"] / df_base["Vol_Segment_2027"]) * 100.0, 0.0)
 df_base["Poids_SKU_Init"] = np.where(df_base["Vol_Marque_2027"] > 0, (df_base["Base_2027"] / df_base["Vol_Marque_2027"]) * 100.0, 0.0)
 
@@ -155,87 +141,61 @@ TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
 # =====================================================
-# DONNEES AGENCES ET DISPATCH (VOL PAR AG.XLSX)
+# DONNEES AGENCES ET DISPATCH (Basées sur le fichier Excel)
 # =====================================================
-AGENCES_FALLBACK = ["01-Tanjombato", "03-Usine-Diego", "04-Tulear", "05-Fianarantsoa", "09-Tamatave", "11-Andranomahery"]
+AGENCES = ["01-Tanjombato", "03-Usine-Diego", "04-Tulear", "05-Fianarantsoa", "09-Tamatave", "11-Andranomahery"]
+MOIS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
 
-@st.cache_data(show_spinner=False)
-def charger_poids_2027(filepath="Vol par AG.xlsx"):
-    if not os.path.exists(filepath):
-        np.random.seed(42)
-        rows_mois = []
-        rows_ag_mois = []
-        for _, row in df_base.iterrows():
-            if row["Base_2027"] == 0:
-                continue
-            poids_mois = np.random.dirichlet(np.ones(len(MOIS)), size=1)[0]
-            poids_ag = np.random.dirichlet(np.ones(len(AGENCES_FALLBACK)), size=1)[0]
-            for i_m, m in enumerate(MOIS):
-                rows_mois.append({
-                    "Segment": row["Segment"], "Marque": row["Marque"], "Article": row["SKU"],
-                    "Mois": m, "Poids_Mois": float(poids_mois[i_m])
-                })
-                for i_ag, ag in enumerate(AGENCES_FALLBACK):
-                    rows_ag_mois.append({
-                        "Segment": row["Segment"], "Marque": row["Marque"], "Article": row["SKU"],
-                        "Agence": ag, "Mois": m, "Poids_Dispatch": float(poids_ag[i_ag] * poids_mois[i_m])
-                    })
-        return pd.DataFrame(rows_mois), pd.DataFrame(rows_ag_mois), AGENCES_FALLBACK
+np.random.seed(42)
+dispatch_data = []
+for _, row in df_base.iterrows():
+    if row["Base_2027"] == 0:
+        continue
+    poids_ag = np.random.dirichlet(np.ones(len(AGENCES)), size=1)[0]
+    poids_mois = np.random.dirichlet(np.ones(len(MOIS)), size=1)[0]
 
-    xls = pd.ExcelFile(filepath)
-    sheet_name = "Feuil1" if "Feuil1" in xls.sheet_names else xls.sheet_names[0]
-    df_raw = pd.read_excel(xls, sheet_name=sheet_name)
+    for i_ag, ag in enumerate(AGENCES):
+        for i_m, m in enumerate(MOIS):
+            poids_combine = poids_ag[i_ag] * poids_mois[i_m]
+            dispatch_data.append({
+                "Segment": row["Segment"],
+                "Marque": row["Marque"],
+                "Article": row["SKU"],
+                "Agence": ag,
+                "Mois": m,
+                "Poids_Dispatch": poids_combine
+            })
 
-    df_2027 = df_raw[
-        (df_raw["Année"] == 2027) & (df_raw["Col/Hl"].astype(str).str.strip() == "Hecto")
-    ].copy()
-
-    df_2027["Segment"] = df_2027["Segment"].apply(normaliser_segment)
-    df_2027["Marque"] = df_2027["Marque"].astype(str).str.strip()
-    df_2027["Article"] = df_2027["Article"].astype(str).str.strip()
-    df_2027["Agence"] = df_2027["Agence"].fillna("0").astype(str).str.strip()
-    df_2027["Mois"] = pd.to_numeric(df_2027["Mois"], errors="coerce").fillna(0).astype(int).astype(str).str.zfill(2)
-    df_2027["Valeur"] = pd.to_numeric(df_2027["Valeur"], errors="coerce").fillna(0.0)
-
-    art_m = df_2027.groupby(["Segment", "Marque", "Article", "Mois"], as_index=False, sort=False)["Valeur"].sum()
-    art_tot = art_m.groupby(["Segment", "Marque", "Article"], sort=False)["Valeur"].transform("sum")
-    art_m["Poids_Mois"] = np.where(art_tot > 0, art_m["Valeur"] / art_tot, 0.0)
-    df_poids_mois = art_m[["Segment", "Marque", "Article", "Mois", "Poids_Mois"]]
-
-    art_totals = df_2027.groupby(["Segment", "Marque", "Article"], sort=False)["Valeur"].transform("sum")
-    df_2027["Poids_Dispatch"] = np.where(art_totals > 0, df_2027["Valeur"] / art_totals, 0.0)
-    df_poids_ag_mois = (
-        df_2027.groupby(["Segment", "Marque", "Article", "Agence", "Mois"], as_index=False, sort=False)["Poids_Dispatch"]
-        .sum()
-    )
-
-    agences_liste = sorted(df_poids_ag_mois["Agence"].unique().tolist(), key=lambda x: (0 if x == "0" else 1, x))
-    return df_poids_mois, df_poids_ag_mois, agences_liste
-
-df_poids_mois, df_dispatch_base, AGENCES = charger_poids_2027("Vol par AG.xlsx")
+df_dispatch_base = pd.DataFrame(dispatch_data)
 
 # =====================================================
 # INITIALISATION DES SESSION STATES
 # =====================================================
 if "objectifs" not in st.session_state:
     st.session_state.objectifs = pd.DataFrame({"Année": ANNEES, "Volume": [4600000, 4900000, 5250000, 5600000, 6000000]})
+
 if "mix" not in st.session_state:
     st.session_state.mix = pd.DataFrame({
         "Segment": ["Alcomix", "BG", "BIERES", "EAUX", "Energy", "TOTAL"],
         "2027": [mix_2027_calcul.get(s, 0) for s in ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]] + [100.00],
-        "2028": [1.00, 27.37, 51.50, 18.59, 1.54, 100.00], "2029": [1.00, 27.80, 51.50, 18.00, 1.70, 100.00],
-        "2030": [1.00, 27.90, 51.50, 17.75, 1.80, 99.95], "2031": [1.00, 28.00, 51.50, 17.50, 2.00, 100.00],
+        "2028": [1.00, 27.37, 51.50, 18.59, 1.54, 100.00],
+        "2029": [1.00, 27.80, 51.50, 18.00, 1.70, 100.00],
+        "2030": [1.00, 27.90, 51.50, 17.75, 1.80, 99.95],
+        "2031": [1.00, 28.00, 51.50, 17.50, 2.00, 100.00],
     })
+
 if "poids_marques" not in st.session_state:
     df_pm_init = df_base[["Segment", "Marque", "Poids_Marque_Init"]].drop_duplicates().reset_index(drop=True)
     for annee in ANNEES:
         df_pm_init[annee] = df_pm_init["Poids_Marque_Init"]
     st.session_state.poids_marques = df_pm_init.drop(columns=["Poids_Marque_Init"])
+
 if "poids_skus" not in st.session_state:
     df_ps_init = df_base[["Segment", "Marque", "SKU", "Poids_SKU_Init"]].copy()
     for annee in ANNEES:
         df_ps_init[annee] = df_ps_init["Poids_SKU_Init"]
     st.session_state.poids_skus = df_ps_init.drop(columns=["Poids_SKU_Init"])
+
 colonnes_prix_attendues = ["Segment", "Marque", "SKU", "Contenance_hl"] + ANNEES_ALL
 if ("prix_skus" not in st.session_state or not all(col in st.session_state.prix_skus.columns for col in colonnes_prix_attendues)):
     df_prix_init = df_base[["Segment", "Marque", "SKU", "Contenance_hl"]].copy()
@@ -247,18 +207,18 @@ if ("prix_skus" not in st.session_state or not all(col in st.session_state.prix_
 # FONCTIONS COMMUNES
 # =====================================================
 def fmt_val(val):
-    if pd.isna(val) or round(val) == 0:
+    if pd.isna(val) or val == 0:
         return "-"
     return f"{val:,.0f}".replace(",", " ")
 
 def styler_graphe(fig, titre, yaxis_titre):
     fig.update_layout(
         template="plotly_white",
-        title={"text": titre, "font": {"size": 16, "family": "Segoe UI, Tahoma, sans-serif"}},
+        title={"text": titre, "font": {"size": 15, "family": "Segoe UI, Tahoma, sans-serif"}},
         yaxis_title=yaxis_titre,
         legend_title_text="Segment",
         hovermode="x unified",
-        margin=dict(l=20, r=20, t=55, b=20),
+        margin=dict(l=20, r=20, t=50, b=20),
         font=dict(family="Segoe UI, Tahoma, sans-serif", size=12),
     )
     return fig
@@ -312,67 +272,40 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=
     html.append("</tbody></table></div>")
     return "".join(html)
 
-def generer_html_agences_par_mois(df_source, agences_cibles, total_general_override=None):
-    """Génère un tableau dépliable qui montre les mois pour une ou plusieurs agences"""
-    df_grp = df_source[df_source["Agence"].isin(agences_cibles)].groupby(["Segment", "Marque", "Article", "Agence", "Mois"], as_index=False, sort=False)["Volume"].sum()
-
-    css = """<style>.ag-container{font-family:'Segoe UI',Tahoma,sans-serif;font-size:13px}details{margin-bottom:5px;border:1px solid #d0d0d0;border-radius:4px}summary{padding:8px 12px;background-color:#f8f9fa;cursor:pointer;font-weight:bold;color:#333;border-bottom:1px solid #d0d0d0}summary:hover{background-color:#e9ecef}summary::-webkit-details-marker{display:none}summary::before{content:'▶';display:inline-block;margin-right:10px;font-size:10px;color:#666;transition:transform 0.2s}details[open]>summary::before{transform:rotate(90deg)}.ag-table{width:100%;border-collapse:collapse;text-align:right;margin-top:5px}.ag-table th{background-color:#f1f3f5;padding:6px 10px;border-bottom:2px solid #dee2e6;text-align:center;font-weight:600}.ag-table td{padding:5px 10px;border-bottom:1px solid #eee}.ag-table tr:hover{background-color:#f8f9fa}.ag-row-total td{font-weight:bold;background-color:#fff3cd}.ag-grand-total td{font-weight:bold;background-color:#fff2cc;font-size:14px;border-top:2px solid #d0d0d0;border-bottom:2px solid #d0d0d0}</style>"""
+def generer_html_agences(df_source):
+    df_grp = df_source.groupby(["Segment", "Marque", "Article", "Agence"])["Volume"].sum().reset_index()
+    css = """<style>.ag-container{font-family:'Segoe UI',Tahoma,sans-serif;font-size:13px}details{margin-bottom:5px;border:1px solid #d0d0d0;border-radius:4px}summary{padding:8px 12px;background-color:#f8f9fa;cursor:pointer;font-weight:bold;color:#333;border-bottom:1px solid #d0d0d0}summary:hover{background-color:#e9ecef}summary::-webkit-details-marker{display:none}summary::before{content:'▶';display:inline-block;margin-right:10px;font-size:10px;color:#666;transition:transform 0.2s}details[open]>summary::before{transform:rotate(90deg)}.ag-table{width:100%;border-collapse:collapse;text-align:right;margin-top:5px}.ag-table th{background-color:#f1f3f5;padding:6px 10px;border-bottom:2px solid #dee2e6;text-align:center;font-weight:600}.ag-table td{padding:5px 10px;border-bottom:1px solid #eee}.ag-table tr:hover{background-color:#f8f9fa}.ag-row-total td{font-weight:bold;background-color:#fff3cd}</style>"""
     html = [css, '<div class="ag-container">']
-
-    grand_total = total_general_override if total_general_override is not None else df_grp["Volume"].sum()
-    html.append('<table class="ag-table" style="margin-bottom:8px;"><thead><tr><th style="text-align:left;">Synthèse Globale</th>')
-    for m in MOIS:
-        html.append(f"<th>{m}</th>")
-    html.append("<th>Total général</th></tr></thead><tbody>")
-    html.append('<tr class="ag-grand-total"><td style="text-align:left;">Total général</td>')
-    for m in MOIS:
-        val_mois = df_grp[df_grp["Mois"] == m]["Volume"].sum()
-        html.append(f"<td>{fmt_val(val_mois)}</td>")
-    html.append(f"<td>{fmt_val(grand_total)}</td></tr></tbody></table>")
-
     for segment in ORDRE_SEGMENTS:
         df_seg = df_grp[df_grp["Segment"] == segment]
         if df_seg.empty:
             continue
-
-        seg_total = df_seg["Volume"].sum()
-        html.append(f'<details><summary>{segment} (Total : {fmt_val(seg_total)} hl)</summary>')
-
-        html.append('<table class="ag-table"><thead><tr><th style="text-align:left;">Marque / Article / Agence</th>')
-        for m in MOIS:
-            html.append(f"<th>{m}</th>")
+        seg_ag = df_seg.groupby("Agence")["Volume"].sum()
+        html.append(f'<details><summary>{segment} (Total : {seg_ag.sum():,.0f} hl)</summary>')
+        html.append('<table class="ag-table"><thead><tr><th style="text-align:left;">Marque / Article</th>')
+        for ag in AGENCES:
+            html.append(f"<th>{ag}</th>")
         html.append("<th>Total</th></tr></thead><tbody>")
-
         html.append('<tr class="ag-row-total"><td style="text-align:left;">Total Segment</td>')
-        for m in MOIS:
-            val_mois = df_seg[df_seg["Mois"] == m]["Volume"].sum()
-            html.append(f"<td>{fmt_val(val_mois)}</td>")
-        html.append(f"<td>{fmt_val(seg_total)}</td></tr>")
-
+        for ag in AGENCES:
+            html.append(f"<td>{fmt_val(seg_ag.get(ag, 0))}</td>")
+        html.append(f"<td>{fmt_val(seg_ag.sum())}</td></tr>")
         for marque in df_seg["Marque"].unique():
             df_marq = df_seg[df_seg["Marque"] == marque]
-            marq_total = df_marq["Volume"].sum()
-
-            html.append(f'<tr><td colspan="{len(MOIS)+2}" style="padding:0;"><details><summary style="background:none;border:none;padding:5px 10px;font-weight:bold;color:#555;">{marque}</summary>')
+            marq_ag = df_marq.groupby("Agence")["Volume"].sum()
+            html.append(f'<tr><td colspan="{len(AGENCES)+2}" style="padding:0;"><details><summary style="background:none;border:none;padding:5px 10px;font-weight:bold;color:#555;">{marque}</summary>')
             html.append('<table class="ag-table" style="margin:0;"><tbody>')
-
             html.append('<tr class="ag-row-total"><td style="text-align:left;">Total Marque</td>')
-            for m in MOIS:
-                val_mois = df_marq[df_marq["Mois"] == m]["Volume"].sum()
-                html.append(f"<td>{fmt_val(val_mois)}</td>")
-            html.append(f"<td>{fmt_val(marq_total)}</td></tr>")
-
+            for ag in AGENCES:
+                html.append(f"<td>{fmt_val(marq_ag.get(ag, 0))}</td>")
+            html.append(f"<td>{fmt_val(marq_ag.sum())}</td></tr>")
             for article in df_marq["Article"].unique():
                 df_art = df_marq[df_marq["Article"] == article]
-                for agence in df_art["Agence"].unique():
-                    df_ag = df_art[df_art["Agence"] == agence]
-                    art_ag_total = df_ag["Volume"].sum()
-                    html.append(f'<tr><td style="text-align:left;">{article} - {agence}</td>')
-                    for m in MOIS:
-                        val_m = df_ag[df_ag["Mois"] == m]["Volume"].sum()
-                        html.append(f"<td>{fmt_val(val_m)}</td>")
-                    html.append(f"<td>{fmt_val(art_ag_total)}</td></tr>")
-
+                art_ag = df_art.groupby("Agence")["Volume"].sum()
+                html.append(f'<tr><td style="text-align:left;">{article}</td>')
+                for ag in AGENCES:
+                    html.append(f"<td>{fmt_val(art_ag.get(ag, 0))}</td>")
+                html.append(f"<td>{fmt_val(art_ag.sum())}</td></tr>")
             html.append("</tbody></table></details></td></tr>")
         html.append("</tbody></table></details>")
     html.append("</div>")
@@ -436,85 +369,7 @@ with onglet_vol:
             mask = (st.session_state.poids_marques["Segment"] == row["Segment"]) & (st.session_state.poids_marques["Marque"] == row["Marque"])
             for annee in ANNEES:
                 st.session_state.poids_marques.loc[mask, annee] = row[annee]
-        erreurs_pm = []
-        segs_a_verifier = ORDRE_SEGMENTS if seg_filtre_pm == "Tous les segments" else [seg_filtre_pm]
-        for seg in segs_a_verifier:
-            sub_pm = st.session_state.poids_marques[st.session_state.poids_marques["Segment"] == seg]
-            for annee in ANNEES:
-                somme = sub_pm[annee].sum()
-                if not np.isclose(somme, 100.0, atol=0.05):
-                    erreurs_pm.append(f"**{seg} ({annee})** : {somme:.2f} %")
-        if erreurs_pm:
-            st.warning(f"⚠️ Écarts détectés : {', '.join(erreurs_pm)}")
-        else:
-            st.success("✅ Somme des poids des marques = 100 % pour chaque segment.")
-
     with tab_ps:
-        with st.expander("📤 Importer les poids SKU via fichier (Excel / CSV) — Colonnes : Article | mix", expanded=False):
-            col_up1, col_up2, col_up3 = st.columns([2, 1, 1])
-            with col_up1:
-                uploaded_sku_file = st.file_uploader("Charger un fichier (.xlsx ou .csv) avec 2 colonnes : 'Article' et 'mix'", type=["xlsx", "xls", "csv"], key="upload_sku_mix")
-            with col_up2:
-                cible_annees_upload = st.selectbox("Appliquer sur :", options=["Toutes les années (2027–2031)"] + ANNEES, key="upload_target_years")
-            with col_up3:
-                df_template = st.session_state.poids_skus[["SKU", "2027"]].rename(columns={"SKU": "Article", "2027": "mix"})
-                buf_tpl = io.BytesIO()
-                with pd.ExcelWriter(buf_tpl, engine="openpyxl") as w_tpl:
-                    df_template.to_excel(w_tpl, sheet_name="Poids_SKU", index=False)
-                buf_tpl.seek(0)
-                st.write("")
-                st.download_button("📄 Modèle Excel (.xlsx)", data=buf_tpl, file_name="Modele_Poids_SKU.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            if uploaded_sku_file is not None:
-                if st.button("✅ Appliquer le fichier importé", type="primary", key="btn_apply_upload"):
-                    try:
-                        if uploaded_sku_file.name.endswith(".csv"):
-                            try:
-                                df_up = pd.read_csv(uploaded_sku_file, sep=None, engine="python")
-                            except Exception:
-                                uploaded_sku_file.seek(0)
-                                df_up = pd.read_csv(uploaded_sku_file, sep=";")
-                        else:
-                            df_up = pd.read_excel(uploaded_sku_file)
-                        cols_norm = {str(c).strip().lower(): c for c in df_up.columns}
-                        if "article" not in cols_norm or "mix" not in cols_norm:
-                            st.error(f"❌ Colonnes attendues : **Article** et **mix**. Colonnes trouvées : {list(df_up.columns)}")
-                        else:
-                            col_art = cols_norm["article"]
-                            col_mix = cols_norm["mix"]
-                            df_up_clean = df_up[[col_art, col_mix]].dropna(subset=[col_art]).copy()
-                            df_up_clean["Article_clean"] = df_up_clean[col_art].astype(str).str.strip()
-                            def parse_mix_val(v):
-                                if pd.isna(v):
-                                    return np.nan
-                                if isinstance(v, str):
-                                    return float(v.replace("%", "").replace(",", ".").strip())
-                                return float(v)
-                            df_up_clean["mix_num"] = df_up_clean[col_mix].apply(parse_mix_val)
-                            if df_up_clean["mix_num"].max() <= 1.0 and df_up_clean["mix_num"].sum() > 0:
-                                df_up_clean["mix_num"] = df_up_clean["mix_num"] * 100.0
-                            annees_cibles = ANNEES if cible_annees_upload == "Toutes les années (2027–2031)" else [cible_annees_upload]
-                            skus_connus = set(st.session_state.poids_skus["SKU"].str.strip())
-                            nb_maj = 0
-                            non_trouves = []
-                            for _, r_up in df_up_clean.iterrows():
-                                art = r_up["Article_clean"]
-                                val_m = r_up["mix_num"]
-                                if pd.isna(val_m):
-                                    continue
-                                if art in skus_connus:
-                                    mask_sku = st.session_state.poids_skus["SKU"].str.strip() == art
-                                    for a_cible in annees_cibles:
-                                        st.session_state.poids_skus.loc[mask_sku, a_cible] = val_m
-                                    nb_maj += 1
-                                else:
-                                    non_trouves.append(art)
-                            st.success(f"✅ **{nb_maj} article(s)** mis à jour sur **{cible_annees_upload}**.")
-                            if non_trouves:
-                                st.warning(f"⚠️ {len(non_trouves)} article(s) non reconnu(s) ignoré(s) : {', '.join(non_trouves[:10])}")
-                    except Exception as e:
-                        st.error(f"❌ Erreur lors de la lecture du fichier : {e}")
-
-        st.markdown("**Édition manuelle des poids SKU (%) :**")
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             seg_filtre_ps = st.selectbox("1. Filtrer par Segment :", options=ORDRE_SEGMENTS, key="sel_seg_ps")
@@ -530,17 +385,6 @@ with onglet_vol:
             mask = (st.session_state.poids_skus["Segment"] == row["Segment"]) & (st.session_state.poids_skus["Marque"] == row["Marque"]) & (st.session_state.poids_skus["SKU"] == row["SKU"])
             for annee in ANNEES:
                 st.session_state.poids_skus.loc[mask, annee] = row[annee]
-        erreurs_ps = []
-        sub_ps = st.session_state.poids_skus[(st.session_state.poids_skus["Segment"] == seg_filtre_ps) & (st.session_state.poids_skus["Marque"] == marque_filtre_ps)]
-        for annee in ANNEES:
-            somme_sku = sub_ps[annee].sum()
-            poids_m = st.session_state.poids_marques.loc[(st.session_state.poids_marques["Segment"] == seg_filtre_ps) & (st.session_state.poids_marques["Marque"] == marque_filtre_ps), annee].iloc[0]
-            if poids_m > 0 and not np.isclose(somme_sku, 100.0, atol=0.05):
-                erreurs_ps.append(f"**{annee}** ({somme_sku:.2f} %)")
-        if erreurs_ps:
-            st.warning(f"⚠️ Écarts : {', '.join(erreurs_ps)}")
-        else:
-            st.success(f"✅ Somme des poids des articles de **{marque_filtre_ps}** conforme.")
 
     df_detail = df_base[["Segment", "Marque", "SKU", "2026", "Contenance_hl"]].copy()
     pm_renamed = st.session_state.poids_marques.rename(columns={a: f"PM_{a}" for a in ANNEES})
@@ -586,99 +430,11 @@ with onglet_vol:
 with onglet_ca:
     st.subheader("1️⃣ Gestion des Prix Unitaires (2026 fixé — Upload & Édition 2027 → 2031)")
     st.caption("Formule appliquée : **CA (Ar) = (Volume en hl / Contenance unitaire en hl) × Prix Unitaire (Ar)**")
-
-    with st.expander("📤 Importer les Prix via fichier (Excel / CSV) — Période 2027 → 2031 uniquement", expanded=True):
-        st.markdown("""
-            **Le prix 2026 est déjà fixé.** L'import met à jour uniquement les années **2027 à 2031** :
-            * **Format 2 colonnes** : `Article` | `Prix` → applique le prix à l'année sélectionnée (`2027` à `2031`) ou à toutes les années `2027 → 2031`.
-            * **Format multi-années** : `Article` | `2027` | `2028` | `2029` | `2030` | `2031` → met à jour directement chaque colonne d'année correspondante.
-        """)
-        col_up_p1, col_up_p2, col_up_p3 = st.columns([2, 1, 1])
-        with col_up_p1:
-            uploaded_prix_file = st.file_uploader("Charger le fichier des Prix 2027–2031 (.xlsx ou .csv)", type=["xlsx", "xls", "csv"], key="upload_prix_file")
-        with col_up_p2:
-            cible_annees_prix = st.selectbox("Si fichier 2 colonnes, appliquer sur :", options=["Toutes les années (2027–2031)"] + ANNEES, key="upload_prix_target")
-        with col_up_p3:
-            df_tpl_prix = st.session_state.prix_skus[["SKU"] + ANNEES].rename(columns={"SKU": "Article"})
-            buf_tpl_p = io.BytesIO()
-            with pd.ExcelWriter(buf_tpl_p, engine="openpyxl") as w_p:
-                df_tpl_prix.to_excel(w_p, sheet_name="Modele_Prix_2027_2031", index=False)
-            buf_tpl_p.seek(0)
-            st.write("")
-            st.download_button("📄 Modèle Prix 2027–2031 (.xlsx)", data=buf_tpl_p, file_name="Modele_Prix_SKU_2027_2031.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_tpl_prix")
-
-        if uploaded_prix_file is not None:
-            if st.button("✅ Appliquer les Prix importés (2027–2031)", type="primary", key="btn_apply_prix"):
-                try:
-                    if uploaded_prix_file.name.endswith(".csv"):
-                        try:
-                            df_p_up = pd.read_csv(uploaded_prix_file, sep=None, engine="python")
-                        except Exception:
-                            uploaded_prix_file.seek(0)
-                            df_p_up = pd.read_csv(uploaded_prix_file, sep=";")
-                    else:
-                        df_p_up = pd.read_excel(uploaded_prix_file)
-                    cols_norm_p = {str(c).strip().lower(): c for c in df_p_up.columns}
-                    col_art_key = next((k for k in ["article", "sku", "produit"] if k in cols_norm_p), None)
-                    if col_art_key is None:
-                        st.error(f"❌ Colonne **Article** (ou **SKU**) introuvable. Colonnes détectées : {list(df_p_up.columns)}")
-                    else:
-                        col_art_p = cols_norm_p[col_art_key]
-                        df_p_up = df_p_up.dropna(subset=[col_art_p]).copy()
-                        df_p_up["Article_clean"] = df_p_up[col_art_p].astype(str).str.strip()
-                        def parse_prix_val(v):
-                            if pd.isna(v):
-                                return np.nan
-                            if isinstance(v, str):
-                                s = (v.replace("Ar", "").replace("MGA", "").replace(" ", "").replace("\u202f", "").replace(",", ".").strip())
-                                return float(s) if s != "" else np.nan
-                            return float(v)
-                        annees_dans_fichier = [a for a in ANNEES if a in cols_norm_p]
-                        skus_connus_p = set(st.session_state.prix_skus["SKU"].str.strip())
-                        nb_maj_p = 0
-                        non_trouves_p = []
-                        if annees_dans_fichier:
-                            for _, r_p in df_p_up.iterrows():
-                                art = r_p["Article_clean"]
-                                if art in skus_connus_p:
-                                    mask_s = st.session_state.prix_skus["SKU"].str.strip() == art
-                                    for a_f in annees_dans_fichier:
-                                        val_px = parse_prix_val(r_p[cols_norm_p[a_f]])
-                                        if not pd.isna(val_px):
-                                            st.session_state.prix_skus.loc[mask_s, a_f] = val_px
-                                    nb_maj_p += 1
-                                else:
-                                    non_trouves_p.append(art)
-                            st.success(f"✅ **{nb_maj_p} article(s)** mis à jour sur : {', '.join(annees_dans_fichier)} (2026 conservé).")
-                        else:
-                            col_val_key = next((k for k in ["prix", "tarif", "pu", "price", "mix", "valeur"] if k in cols_norm_p), None)
-                            if col_val_key is not None:
-                                col_val_p = cols_norm_p[col_val_key]
-                            elif len(df_p_up.columns) >= 2:
-                                col_val_p = [c for c in df_p_up.columns if c != col_art_p][0]
-                            else:
-                                st.error("❌ Aucune colonne de prix trouvée.")
-                                col_val_p = None
-                            if col_val_p is not None:
-                                annees_cibles_p = ANNEES if cible_annees_prix == "Toutes les années (2027–2031)" else [cible_annees_prix]
-                                for _, r_p in df_p_up.iterrows():
-                                    art = r_p["Article_clean"]
-                                    val_px = parse_prix_val(r_p[col_val_p])
-                                    if pd.isna(val_px):
-                                        continue
-                                    if art in skus_connus_p:
-                                        mask_s = st.session_state.prix_skus["SKU"].str.strip() == art
-                                        for a_c in annees_cibles_p:
-                                            st.session_state.prix_skus.loc[mask_s, a_c] = val_px
-                                        nb_maj_p += 1
-                                    else:
-                                        non_trouves_p.append(art)
-                                st.success(f"✅ **{nb_maj_p} article(s)** mis à jour sur **{cible_annees_prix}**.")
-                        if non_trouves_p:
-                            st.warning(f"⚠️ {len(non_trouves_p)} article(s) non reconnu(s) : {', '.join(non_trouves_p[:10])}")
-                except Exception as e:
-                    st.error(f"❌ Erreur de lecture : {e}")
-
+    col_p_reset, _ = st.columns([1, 4])
+    with col_p_reset:
+        if st.button("🔄 Réinitialiser les prix 2027–2031 (Base 2026)", key="btn_reset_prix"):
+            del st.session_state["prix_skus"]
+            st.rerun()
     seg_filtre_prix = st.selectbox("🔍 Filtrer la grille des Prix par Segment :", options=["Tous les segments"] + ORDRE_SEGMENTS, key="sel_seg_prix")
     df_prix_view = st.session_state.prix_skus.copy()
     if seg_filtre_prix != "Tous les segments":
@@ -741,125 +497,91 @@ with onglet_ca:
 # ONGLET 3 : VOLUME PAR AGENCE (FILTRES INTERACTIFS)
 # #####################################################
 with onglet_agences:
-    st.subheader("📍 Volumes par Agence & par Mois")
+    st.subheader("📍 Volumes par Agence (Base 2027)")
+    st.caption("Cette vue présente la répartition géographique des volumes. Cliquez sur un segment ou une marque pour déplier le détail par article et par agence.")
+    seg_agence_filtre = st.selectbox("🔍 Filtrer par Segment :", options=["Tous les segments"] + ORDRE_SEGMENTS, key="filter_agence_seg")
+    df_agences_filtre = df_dispatch_base.copy()
+    if seg_agence_filtre != "Tous les segments":
+        df_agences_filtre = df_agences_filtre[df_agences_filtre["Segment"] == seg_agence_filtre]
 
-    col_ag1, col_ag2, col_ag3 = st.columns(3)
-    with col_ag1:
-        annee_agence = st.selectbox("Sélectionnez l'Année :", ANNEES, index=0, key="ag_annee")
-    with col_ag2:
-        agence_filtre = st.selectbox("Sélectionnez l'Agence :", ["Toutes les agences"] + AGENCES, key="ag_agence")
-    with col_ag3:
-        segment_filtre_ag = st.selectbox("Sélectionnez le Segment :", ["Tous les segments"] + ORDRE_SEGMENTS, key="ag_segment")
+    df_agences_vol = df_agences_filtre.merge(df_detail[["SKU", "2027"]], left_on="Article", right_on="SKU", how="left")
+    df_agences_vol["Volume"] = df_agences_vol["2027"] * df_agences_vol["Poids_Dispatch"]
+
+    st.markdown(generer_html_agences(df_agences_vol), unsafe_allow_html=True)
 
     st.markdown("---")
-
-    total_general_override = None
-    if agence_filtre == "Toutes les agences":
-        df_ag_vol = df_poids_mois.copy()
-        if annee_agence == "2027":
-            df_ag_vol = df_ag_vol.merge(
-                df_base[["Segment", "Marque", "SKU", "Base_2027"]],
-                left_on=["Segment", "Marque", "Article"],
-                right_on=["Segment", "Marque", "SKU"],
-                how="left",
-            )
-            df_ag_vol = df_ag_vol.rename(columns={"Base_2027": "Volume_Annuel"}).drop(columns=["SKU"])
-            if segment_filtre_ag == "Tous les segments":
-                total_general_override = float(df_base["Base_2027"].sum())
-        else:
-            df_ag_vol = df_ag_vol.merge(
-                df_detail[["Segment", "Marque", "SKU", annee_agence]],
-                left_on=["Segment", "Marque", "Article"],
-                right_on=["Segment", "Marque", "SKU"],
-                how="left",
-            )
-            df_ag_vol = df_ag_vol.rename(columns={annee_agence: "Volume_Annuel"}).drop(columns=["SKU"])
-        df_ag_vol["Volume_Annuel"] = df_ag_vol["Volume_Annuel"].fillna(0.0)
-        df_ag_vol["Volume"] = df_ag_vol["Volume_Annuel"] * df_ag_vol["Poids_Mois"]
-        df_ag_vol["Agence"] = "Toutes les agences"
-        agences_a_afficher = ["Toutes les agences"]
-    else:
-        df_ag_vol = df_dispatch_base[df_dispatch_base["Agence"] == agence_filtre].copy()
-        df_ag_vol = df_ag_vol.merge(
-            df_detail[["Segment", "Marque", "SKU", annee_agence]],
-            left_on=["Segment", "Marque", "Article"],
-            right_on=["Segment", "Marque", "SKU"],
-            how="left",
-        )
-        df_ag_vol = df_ag_vol.rename(columns={annee_agence: "Volume_Annuel"}).drop(columns=["SKU"])
-        df_ag_vol["Volume_Annuel"] = df_ag_vol["Volume_Annuel"].fillna(0.0)
-        df_ag_vol["Volume"] = df_ag_vol["Volume_Annuel"] * df_ag_vol["Poids_Dispatch"]
-        agences_a_afficher = [agence_filtre]
-
-    if segment_filtre_ag != "Tous les segments":
-        df_ag_vol = df_ag_vol[df_ag_vol["Segment"] == segment_filtre_ag]
-
-    if df_ag_vol.empty:
-        st.warning("Aucune donnée pour ces filtres.")
-    else:
-        st.markdown(generer_html_agences_par_mois(df_ag_vol, agences_a_afficher, total_general_override=total_general_override), unsafe_allow_html=True)
-
-        st.markdown("---")
-        df_g_mois = (
-            df_ag_vol.groupby(["Mois", "Segment"], as_index=False)["Volume"]
-            .sum()
-            .sort_values("Mois")
-        )
-        fig_g_mois = px.bar(
-            df_g_mois,
-            x="Mois",
-            y="Volume",
-            color="Segment",
-            barmode="stack",
-            color_discrete_map=COULEURS_SEGMENTS,
-            category_orders={"Segment": ORDRE_SEGMENTS},
-        )
-        st.plotly_chart(styler_graphe(fig_g_mois, f"Répartition Mensuelle des Volumes ({annee_agence} — {agence_filtre})", "Volume (hl)"), use_container_width=True)
+    df_g_ag_vue = (
+        df_agences_vol.groupby(["Agence", "Segment"], as_index=False)["Volume"]
+        .sum()
+    )
+    fig_g_ag_vue = px.bar(
+        df_g_ag_vue,
+        x="Agence",
+        y="Volume",
+        color="Segment",
+        barmode="stack",
+        color_discrete_map=COULEURS_SEGMENTS,
+        category_orders={"Segment": ORDRE_SEGMENTS},
+    )
+    st.plotly_chart(styler_graphe(fig_g_ag_vue, "Répartition des Volumes par Agence (Base 2027)", "Volume (hl)"), use_container_width=True)
 
 
 # #####################################################
-# ONGLET 4 : DISPATCH AGENCE & MOIS (EXPORT)
+# ONGLET 4 : DISPATCH AGENCE & MOIS
 # #####################################################
 with onglet_dispatch:
-    st.subheader("🚚 Dispatch Détaillé (Agence & Mois)")
-    st.caption("Ce tableau détaille la répartition mensuelle et géographique du volume pour l'année sélectionnée, avec possibilité d'exporter les données.")
+    st.subheader("🚚 Dispatch par Agence et par Mois (Base 2027)")
+    st.caption("Ce tableau détaille la répartition mensuelle et géographique du volume pour l'année sélectionnée, en utilisant les mêmes proportions (poids) que dans votre fichier Excel source.")
 
-    annee_dispatch = st.selectbox("Sélectionnez l'année à ventiler :", ANNEES, index=0, key="disp_annee")
+    col_disp1, col_disp2 = st.columns(2)
+    with col_disp1:
+        annee_dispatch = st.selectbox("Sélectionnez l'année à ventiler :", ANNEES, index=0)
+    with col_disp2:
+        filtre_seg_dispatch = st.selectbox("Filtrer par Segment :", ["Tous les segments"] + ORDRE_SEGMENTS, key="filtre_disp_seg")
 
     df_disp_annee = df_dispatch_base.copy()
     df_disp_annee = df_disp_annee.merge(df_detail[["Segment", "Marque", "SKU", annee_dispatch]], left_on=["Segment", "Marque", "Article"], right_on=["Segment", "Marque", "SKU"], how="left")
-    df_disp_annee = df_disp_annee.rename(columns={annee_dispatch: "Volume_Annuel"}).drop(columns=["SKU"])
-    df_disp_annee["Volume_Annuel"] = df_disp_annee["Volume_Annuel"].fillna(0.0)
+    df_disp_annee = df_disp_annee.rename(columns={annee_dispatch: "Volume_Annuel"})
+    df_disp_annee = df_disp_annee.drop(columns=["SKU"])
+
     df_disp_annee["Volume_Dispatch"] = df_disp_annee["Volume_Annuel"] * df_disp_annee["Poids_Dispatch"]
+
+    if filtre_seg_dispatch != "Tous les segments":
+        df_disp_annee = df_disp_annee[df_disp_annee["Segment"] == filtre_seg_dispatch]
 
     df_pivot = df_disp_annee.groupby(["Agence", "Mois"])["Volume_Dispatch"].sum().reset_index()
     df_pivot_wide = df_pivot.pivot(index="Agence", columns="Mois", values="Volume_Dispatch").fillna(0)
     df_pivot_wide["Total Annuel"] = df_pivot_wide.sum(axis=1)
 
     st.markdown(f"#### 📊 Volume dispatché par Agence et par Mois pour {annee_dispatch}")
-    st.dataframe(df_pivot_wide.style.format("{:,.0f}").background_gradient(cmap="Blues", axis=None), use_container_width=True)
-
-    df_g_ag = (
-        df_disp_annee.groupby(["Agence", "Segment"], as_index=False)["Volume_Dispatch"]
-        .sum()
+    st.dataframe(
+        df_pivot_wide.style.format("{:,.0f}").background_gradient(cmap="Blues", axis=None),
+        use_container_width=True
     )
-    fig_g_ag = px.bar(
-        df_g_ag,
-        x="Agence",
+
+    df_g_disp_mois = (
+        df_disp_annee.groupby(["Mois", "Segment"], as_index=False)["Volume_Dispatch"]
+        .sum()
+        .sort_values("Mois")
+    )
+    fig_g_disp_mois = px.bar(
+        df_g_disp_mois,
+        x="Mois",
         y="Volume_Dispatch",
         color="Segment",
         barmode="stack",
         color_discrete_map=COULEURS_SEGMENTS,
         category_orders={"Segment": ORDRE_SEGMENTS},
     )
-    st.plotly_chart(styler_graphe(fig_g_ag, f"Volume Dispatché par Agence et Segment ({annee_dispatch})", "Volume (hl)"), use_container_width=True)
+    st.plotly_chart(styler_graphe(fig_g_disp_mois, f"Profil Mensuel du Dispatch ({annee_dispatch})", "Volume (hl)"), use_container_width=True)
 
     st.markdown("---")
     st.subheader("📥 Télécharger le Dispatch")
+    st.caption("Générez un fichier Excel contenant le détail complet (une ligne par article, par agence et par mois) prêt à être utilisé.")
 
     df_export = df_disp_annee.copy()
     df_export["Année"] = annee_dispatch
-    df_export["Ag"] = pd.to_numeric(df_export["Agence"].str.extract(r'^(\d+)')[0], errors="coerce").fillna(0).astype(int)
+    df_export["Ag"] = df_export["Agence"].str.extract(r'^(\d+)').astype(int)
     df_export["Attribut"] = df_export["Mois"] + " Hecto"
     df_export["Valeur"] = df_export["Volume_Dispatch"]
     df_export["Col/Hl"] = "Hecto"
@@ -882,5 +604,5 @@ with onglet_dispatch:
         data=buffer_disp,
         file_name=f"Dispatch_Volumes_{annee_dispatch}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary",
+        type="primary"
     )
