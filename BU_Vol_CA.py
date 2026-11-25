@@ -48,8 +48,7 @@ ANNEES_ALL = ["2026"] + ANNEES
 ORDRE_SEGMENTS = ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]
 
 # =====================================================
-# BASE DETAILLEE : Données 2026 et 2027 exactes fournies
-# [Segment, Marque, SKU, Vol_2026, Vol_2027, Prix_2026_Fixe, Contenance_hl]
+# BASE DETAILLEE
 # =====================================================
 detail = [
     # ALCOMIX
@@ -155,7 +154,6 @@ df_base = pd.DataFrame(
     columns=["Segment", "Marque", "SKU", "2026", "Base_2027", "Prix_2026_Fixe", "Contenance_hl"],
 )
 
-# CALCUL DES POIDS BASES SUR 2027 (Au lieu de 2026)
 df_base["Vol_Segment_2027"] = df_base.groupby("Segment")["Base_2027"].transform("sum")
 df_base["Vol_Marque_2027"] = df_base.groupby(["Segment", "Marque"])["Base_2027"].transform("sum")
 
@@ -170,7 +168,6 @@ df_base["Poids_SKU_Init"] = np.where(
     0.0,
 )
 
-# CALCUL DU MIX SEGMENT BASE SUR 2027
 TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
@@ -178,7 +175,6 @@ mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) *
 # INITIALISATION DES SESSION STATES
 # =====================================================
 if "objectifs" not in st.session_state:
-    # 2027 est fixé à 4 600 000, 2028 à 4 900 000, etc.
     st.session_state.objectifs = pd.DataFrame({
         "Année": ANNEES,
         "Volume": [4600000, 4900000, 5250000, 5600000, 6000000],
@@ -228,7 +224,7 @@ if (
     st.session_state.prix_skus = df_prix_init
 
 # =====================================================
-# FONCTIONS COMMUNES (FORMATAGE, TAUX ÉVO, HTML FUSIONNÉ, EXCEL)
+# FONCTIONS COMMUNES
 # =====================================================
 def fmt_val(val):
     if pd.isna(val) or val == 0:
@@ -237,7 +233,6 @@ def fmt_val(val):
 
 
 def calculer_taux_evolution(df_agg, id_cols):
-    """Calcule le taux de croissance annuel (%) de 2027 à 2031 vs N-1."""
     rows = []
     for _, r in df_agg.iterrows():
         for i in range(1, len(ANNEES_ALL)):
@@ -254,7 +249,7 @@ def calculer_taux_evolution(df_agg, id_cols):
     return pd.DataFrame(rows)
 
 
-def generer_html_fusionne(df_source, cols_annees, segments_cibles):
+def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=False):
     df_sub = df_source[df_source["Segment"].isin(segments_cibles)]
     label_total = (
         "TOTAL ANNEE"
@@ -295,6 +290,13 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles):
         color: #000000;
         font-weight: bold;
         font-size: 14px;
+    }
+    .row-eco-total td {
+        background-color: #FFF2CC;
+        color: #000000;
+        font-weight: bold;
+        font-size: 13px;
+        font-style: italic;
     }
     .cell-seg-side {
         background-color: #C00000;
@@ -342,12 +344,14 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles):
         html.append(f"<th>{annee}</th>")
     html.append("</tr></thead><tbody>")
 
+    # Ligne Total (Haut)
     html.append('<tr class="row-total">')
     html.append(f'<td colspan="3" style="text-align:center;">{label_total}</td>')
     for annee in cols_annees:
         html.append(f"<td>{fmt_val(df_sub[annee].sum())}</td>")
     html.append("</tr>")
 
+    # Données
     for segment in ORDRE_SEGMENTS:
         if segment not in segments_cibles:
             continue
@@ -385,11 +389,28 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles):
                     html.append(f'<td class="cell-val">{fmt_val(row[annee])}</td>')
                 html.append("</tr>")
 
+    # Ligne Évolution (Bas)
+    if afficher_evo:
+        html.append('<tr class="row-eco-total">')
+        html.append('<td colspan="3" style="text-align:center;">Évolution vs N-1 (%)</td>')
+        
+        for i, annee in enumerate(cols_annees):
+            if i == 0:
+                html.append("<td>-</td>")
+            else:
+                an_prev = cols_annees[i-1]
+                v_curr = df_sub[annee].sum()
+                v_prev = df_sub[an_prev].sum()
+                taux = ((v_curr - v_prev) / v_prev * 100.0) if v_prev > 0 else 0
+                signe = "+" if taux >= 0 else ""
+                html.append(f"<td>{signe}{taux:.1f}%</td>")
+        html.append("</tr>")
+
     html.append("</tbody></table></div>")
     return "".join(html)
 
 
-def ecrire_feuille_fusionnee_excel(writer, sheet_title, df_source, cols_annees):
+def ecrire_feuille_fusionnee_excel(writer, sheet_title, df_source, cols_annees, afficher_evo=False):
     ws = writer.book.create_sheet(title=sheet_title)
 
     fill_header = PatternFill(start_color="262626", end_color="262626", fill_type="solid")
@@ -537,6 +558,34 @@ def ecrire_feuille_fusionnee_excel(writer, sheet_title, df_source, cols_annees):
             c.font = font_seg
             c.alignment = align_center
             c.border = border_cell
+
+    # Ligne évolution
+    if afficher_evo:
+        ws.cell(row=curr_row, column=1, value="Évolution (%)")
+        ws.merge_cells(start_row=curr_row, start_column=1, end_row=curr_row, end_column=3)
+        for col_i in range(1, 4):
+            c = ws.cell(row=curr_row, column=col_i)
+            c.fill = fill_total
+            c.font = font_total
+            c.alignment = align_center
+            c.border = border_cell
+
+        for idx_a, annee in enumerate(cols_annees, start=4):
+            if idx_a == 4:
+                c = ws.cell(row=curr_row, column=idx_a, value="-")
+            else:
+                an_prev = cols_annees[idx_a - 4 - 1]
+                v_curr = df_source[annee].sum()
+                v_prev = df_source[an_prev].sum()
+                taux = ((v_curr - v_prev) / v_prev) if v_prev > 0 else 0
+                c = ws.cell(row=curr_row, column=idx_a, value=taux)
+                c.number_format = "+0.0%;-0.0%;0.0%"
+                
+            c.fill = fill_total
+            c.font = font_total
+            c.alignment = align_right
+            c.border = border_cell
+        curr_row += 1
 
     ws.column_dimensions["A"].width = 14
     ws.column_dimensions["B"].width = 16
@@ -811,7 +860,7 @@ with onglet_vol:
     if not segments_selectionnes_vol:
         st.info("Veuillez sélectionner au moins un segment dans le filtre ci-dessus.")
     else:
-        st.markdown(generer_html_fusionne(df_detail, ANNEES_ALL, segments_selectionnes_vol), unsafe_allow_html=True)
+        st.markdown(generer_html_fusionne(df_detail, ANNEES_ALL, segments_selectionnes_vol, afficher_evo=False), unsafe_allow_html=True)
 
 
 # #####################################################
@@ -997,7 +1046,7 @@ with onglet_ca:
     if not segments_selectionnes_ca:
         st.info("Veuillez sélectionner au moins un segment dans le filtre ci-dessus.")
     else:
-        st.markdown(generer_html_fusionne(df_ca, ANNEES_ALL, segments_selectionnes_ca), unsafe_allow_html=True)
+        st.markdown(generer_html_fusionne(df_ca, ANNEES_ALL, segments_selectionnes_ca, afficher_evo=True), unsafe_allow_html=True)
 
 
 # =====================================================
@@ -1010,9 +1059,9 @@ with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
     st.session_state.mix.to_excel(writer, sheet_name="2_Mix_Segment", index=False)
     st.session_state.poids_marques.to_excel(writer, sheet_name="3_Poids_Marques", index=False)
     st.session_state.poids_skus.to_excel(writer, sheet_name="4_Poids_SKU", index=False)
-    ecrire_feuille_fusionnee_excel(writer, "5_Simulation_Volumes_hl", df_detail, ANNEES_ALL)
+    ecrire_feuille_fusionnee_excel(writer, "5_Simulation_Volumes_hl", df_detail, ANNEES_ALL, afficher_evo=False)
     st.session_state.prix_skus.to_excel(writer, sheet_name="6_Prix_et_Conv_hl", index=False)
-    ecrire_feuille_fusionnee_excel(writer, "7_Simulation_CA_Ar", df_ca, ANNEES_ALL)
+    ecrire_feuille_fusionnee_excel(writer, "7_Simulation_CA_Ar", df_ca, ANNEES_ALL, afficher_evo=True)
 buffer.seek(0)
 st.download_button(
     label="📥 Télécharger le fichier Excel complet — Volumes (hl) & CA (Ar) (.xlsx)",
