@@ -32,7 +32,6 @@ MOIS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
 
 SEGMENT_MAP_EXCEL = {
     "ALCOMIX": "Alcomix",
-    "ALCOMIX ": "Alcomix",
     "BG": "BG",
     "BI": "BIERES",
     "BIERES": "BIERES",
@@ -158,18 +157,26 @@ mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) *
 AGENCES_FALLBACK = ["01-Tanjombato", "03-Usine-Diego", "04-Tulear", "05-Fianarantsoa", "09-Tamatave", "11-Andranomahery"]
 
 @st.cache_data(show_spinner=False)
-def charger_dispatch_2027(filepath="Vol par AG.xlsx"):
+def charger_poids_2027(filepath="Vol par AG.xlsx"):
     if not os.path.exists(filepath):
         np.random.seed(42)
-        rows = []
+        rows_mois = []
+        rows_ag_mois = []
         for _, row in df_base.iterrows():
             if row["Base_2027"] == 0:
                 continue
-            poids_ag = np.random.dirichlet(np.ones(len(AGENCES_FALLBACK)), size=1)[0]
             poids_mois = np.random.dirichlet(np.ones(len(MOIS)), size=1)[0]
-            for i_ag, ag in enumerate(AGENCES_FALLBACK):
-                for i_m, m in enumerate(MOIS):
-                    rows.append({
+            poids_ag = np.random.dirichlet(np.ones(len(AGENCES_FALLBACK)), size=1)[0]
+            for i_m, m in enumerate(MOIS):
+                rows_mois.append({
+                    "Segment": row["Segment"],
+                    "Marque": row["Marque"],
+                    "Article": row["SKU"],
+                    "Mois": m,
+                    "Poids_Mois": float(poids_mois[i_m]),
+                })
+                for i_ag, ag in enumerate(AGENCES_FALLBACK):
+                    rows_ag_mois.append({
                         "Segment": row["Segment"],
                         "Marque": row["Marque"],
                         "Article": row["SKU"],
@@ -177,7 +184,7 @@ def charger_dispatch_2027(filepath="Vol par AG.xlsx"):
                         "Mois": m,
                         "Poids_Dispatch": float(poids_ag[i_ag] * poids_mois[i_m]),
                     })
-        return pd.DataFrame(rows), AGENCES_FALLBACK, False
+        return pd.DataFrame(rows_mois), pd.DataFrame(rows_ag_mois), AGENCES_FALLBACK, False
 
     xls = pd.ExcelFile(filepath)
     sheet_name = "Feuil1" if "Feuil1" in xls.sheet_names else xls.sheet_names[0]
@@ -194,18 +201,24 @@ def charger_dispatch_2027(filepath="Vol par AG.xlsx"):
     df_2027["Mois"] = pd.to_numeric(df_2027["Mois"], errors="coerce").fillna(0).astype(int).astype(str).str.zfill(2)
     df_2027["Valeur"] = pd.to_numeric(df_2027["Valeur"], errors="coerce").fillna(0.0)
 
+    # 1) Poids mensuel de chaque article (somme des 12 mois = 1 par article)
+    art_m = df_2027.groupby(["Segment", "Marque", "Article", "Mois"], as_index=False)["Valeur"].sum()
+    art_tot = art_m.groupby(["Segment", "Marque", "Article"])["Valeur"].transform("sum")
+    art_m["Poids_Mois"] = np.where(art_tot > 0, art_m["Valeur"] / art_tot, 0.0)
+    df_poids_mois = art_m[["Segment", "Marque", "Article", "Mois", "Poids_Mois"]]
+
+    # 2) Poids détaillé par (Agence, Mois) pour chaque article
     art_totals = df_2027.groupby(["Segment", "Marque", "Article"])["Valeur"].transform("sum")
     df_2027["Poids_Dispatch"] = np.where(art_totals > 0, df_2027["Valeur"] / art_totals, 0.0)
-
-    df_poids = (
+    df_poids_ag_mois = (
         df_2027.groupby(["Segment", "Marque", "Article", "Agence", "Mois"], as_index=False)["Poids_Dispatch"]
         .sum()
     )
 
-    agences_liste = sorted(df_poids["Agence"].unique().tolist(), key=lambda x: (0 if x == "0" else 1, x))
-    return df_poids, agences_liste, True
+    agences_liste = sorted(df_poids_ag_mois["Agence"].unique().tolist(), key=lambda x: (0 if x == "0" else 1, x))
+    return df_poids_mois, df_poids_ag_mois, agences_liste, True
 
-df_dispatch_base, AGENCES, dispatch_from_excel = charger_dispatch_2027("Vol par AG.xlsx")
+df_poids_mois, df_dispatch_base, AGENCES, dispatch_from_excel = charger_poids_2027("Vol par AG.xlsx")
 
 # =====================================================
 # INITIALISATION DES SESSION STATES
@@ -293,12 +306,9 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=
     html.append("</tbody></table></div>")
     return "".join(html)
 
-def generer_html_agences_par_mois(df_source, agences_cibles, segments_cibles):
+def generer_html_agences_par_mois(df_source, segments_cibles):
     """Génère un tableau matriciel Segment / Marque / Article par Mois (01 à 12) + Total général."""
-    df_filtre = df_source[
-        (df_source["Agence"].isin(agences_cibles)) &
-        (df_source["Segment"].isin(segments_cibles))
-    ]
+    df_filtre = df_source[df_source["Segment"].isin(segments_cibles)]
     df_grp = (
         df_filtre.groupby(["Segment", "Marque", "Article", "Mois"], as_index=False)["Volume"]
         .sum()
@@ -757,7 +767,7 @@ with onglet_ca:
 with onglet_agences:
     st.subheader("📍 Volumes par Agence & par Mois")
     if dispatch_from_excel:
-        st.caption("Poids mensuels par agence chargés depuis **Vol par AG.xlsx** (2027 — Hecto).")
+        st.caption("Poids mensuels 2027 par article chargés depuis **Vol par AG.xlsx** (Hecto).")
 
     col_ag1, col_ag2, col_ag3 = st.columns(3)
     with col_ag1:
@@ -774,16 +784,28 @@ with onglet_agences:
 
     st.markdown("---")
 
-    df_ag_vol = df_dispatch_base.copy()
-    if annee_agence == "2027" and agence_filtre == "Toutes les agences" and segment_filtre_ag == ORDRE_SEGMENTS:
-        df_ag_vol = df_ag_vol.merge(
-            df_base[["Segment", "Marque", "SKU", "Base_2027"]],
-            left_on=["Segment", "Marque", "Article"],
-            right_on=["Segment", "Marque", "SKU"],
-            how="left",
-        )
-        df_ag_vol = df_ag_vol.rename(columns={"Base_2027": "Volume_Annuel"}).drop(columns=["SKU"])
+    if agence_filtre == "Toutes les agences":
+        df_ag_vol = df_poids_mois.copy()
+        if annee_agence == "2027":
+            df_ag_vol = df_ag_vol.merge(
+                df_base[["Segment", "Marque", "SKU", "Base_2027"]],
+                left_on=["Segment", "Marque", "Article"],
+                right_on=["Segment", "Marque", "SKU"],
+                how="left",
+            )
+            df_ag_vol = df_ag_vol.rename(columns={"Base_2027": "Volume_Annuel"}).drop(columns=["SKU"])
+        else:
+            df_ag_vol = df_ag_vol.merge(
+                df_detail[["Segment", "Marque", "SKU", annee_agence]],
+                left_on=["Segment", "Marque", "Article"],
+                right_on=["Segment", "Marque", "SKU"],
+                how="left",
+            )
+            df_ag_vol = df_ag_vol.rename(columns={annee_agence: "Volume_Annuel"}).drop(columns=["SKU"])
+        df_ag_vol["Volume_Annuel"] = df_ag_vol["Volume_Annuel"].fillna(0.0)
+        df_ag_vol["Volume"] = df_ag_vol["Volume_Annuel"] * df_ag_vol["Poids_Mois"]
     else:
+        df_ag_vol = df_dispatch_base[df_dispatch_base["Agence"] == agence_filtre].copy()
         df_ag_vol = df_ag_vol.merge(
             df_detail[["Segment", "Marque", "SKU", annee_agence]],
             left_on=["Segment", "Marque", "Article"],
@@ -791,12 +813,9 @@ with onglet_agences:
             how="left",
         )
         df_ag_vol = df_ag_vol.rename(columns={annee_agence: "Volume_Annuel"}).drop(columns=["SKU"])
+        df_ag_vol["Volume_Annuel"] = df_ag_vol["Volume_Annuel"].fillna(0.0)
+        df_ag_vol["Volume"] = df_ag_vol["Volume_Annuel"] * df_ag_vol["Poids_Dispatch"]
 
-    df_ag_vol["Volume_Annuel"] = df_ag_vol["Volume_Annuel"].fillna(0.0)
-    df_ag_vol["Volume"] = df_ag_vol["Volume_Annuel"] * df_ag_vol["Poids_Dispatch"]
-
-    if agence_filtre != "Toutes les agences":
-        df_ag_vol = df_ag_vol[df_ag_vol["Agence"] == agence_filtre]
     if segment_filtre_ag:
         df_ag_vol = df_ag_vol[df_ag_vol["Segment"].isin(segment_filtre_ag)]
 
@@ -805,9 +824,8 @@ with onglet_agences:
     elif df_ag_vol.empty:
         st.warning("Aucune donnée pour ces filtres.")
     else:
-        agences_a_afficher = [agence_filtre] if agence_filtre != "Toutes les agences" else AGENCES
         st.markdown(
-            generer_html_agences_par_mois(df_ag_vol, agences_a_afficher, segment_filtre_ag),
+            generer_html_agences_par_mois(df_ag_vol, segment_filtre_ag),
             unsafe_allow_html=True,
         )
 
