@@ -182,74 +182,39 @@ def charger_dispatch_depuis_fichier():
     df_hl["Agence_Norm"] = df_hl["Agence"].astype(str).str.strip()
     df_hl = df_hl[df_hl["Agence"].notna() & (df_hl["Agence_Norm"] != "0") & (df_hl["Agence_Norm"] != "")]
 
-    df_hl["Volume_Num"] = pd.to_numeric(df_hl["Volume"], errors="coerce").fillna(0.0)
     df_hl["Poids_Num"] = pd.to_numeric(df_hl["Poids"], errors="coerce").fillna(0.0)
     tot_poids = df_hl["Poids_Num"].sum()
     df_hl["Poids_Norm"] = (df_hl["Poids_Num"] / tot_poids) if tot_poids > 0 else 0.0
-
-    agences_liste = (
-        df_hl.groupby("Agence_Norm", as_index=False)["Poids_Norm"]
-        .sum()
-        .sort_values("Poids_Norm", ascending=False)["Agence_Norm"]
-        .tolist()
-    )
-
-    df_hl["Segment_Norm"] = df_hl["Segment"].astype(str).str.strip().map(SEG_MAP_XL).fillna(df_hl["Segment"].astype(str).str.strip())
-    df_hl["Marque_Norm"] = df_hl["Marque"].astype(str).str.strip()
-    df_hl["Article_Norm"] = df_hl["Article"].astype(str).str.strip()
     df_hl["Mois_Norm"] = pd.to_numeric(df_hl["Mois"], errors="coerce").fillna(1).astype(int).apply(lambda x: f"{x:02d}")
 
-    grp_art = (
-        df_hl.groupby(["Segment_Norm", "Marque_Norm", "Article_Norm", "Agence_Norm", "Mois_Norm"], as_index=False)["Poids_Norm"]
-        .sum()
-    )
-    tot_art = grp_art.groupby(["Segment_Norm", "Marque_Norm", "Article_Norm"])["Poids_Norm"].transform("sum")
-    grp_art["Poids_Art"] = np.where(tot_art > 0, grp_art["Poids_Norm"] / tot_art, 0.0)
+    # 1. Poids global exact de chaque agence sur l'ensemble du fichier
+    ag_w = df_hl.groupby("Agence_Norm", as_index=False)["Poids_Norm"].sum()
+    tot_ag_w = ag_w["Poids_Norm"].sum()
+    ag_w["Poids_Agence"] = np.where(tot_ag_w > 0, ag_w["Poids_Norm"] / tot_ag_w, 1.0 / len(ag_w))
+    ag_w = ag_w.sort_values("Poids_Agence", ascending=False).reset_index(drop=True)
+    agences_liste = ag_w["Agence_Norm"].tolist()
+    poids_agence_map = dict(zip(ag_w["Agence_Norm"], ag_w["Poids_Agence"]))
 
-    grp_glob = grp_art.groupby(["Agence_Norm", "Mois_Norm"], as_index=False)["Poids_Norm"].sum()
-    tot_glob = grp_glob["Poids_Norm"].sum()
-    grp_glob["Poids_Glob"] = np.where(tot_glob > 0, grp_glob["Poids_Norm"] / tot_glob, 1.0 / (len(agences_liste) * len(MOIS)))
+    # 2. Saisonnalité mensuelle (01..12) par agence
+    ag_m_w = df_hl.groupby(["Agence_Norm", "Mois_Norm"], as_index=False)["Poids_Norm"].sum()
+    ag_m_tot = ag_m_w.groupby("Agence_Norm")["Poids_Norm"].transform("sum")
+    ag_m_w["Poids_Mois_Dans_Ag"] = np.where(ag_m_tot > 0, ag_m_w["Poids_Norm"] / ag_m_tot, 1.0 / len(MOIS))
+    poids_mois_map = {(r["Agence_Norm"], r["Mois_Norm"]): r["Poids_Mois_Dans_Ag"] for _, r in ag_m_w.iterrows()}
 
-    poids_art_map = {
-        (r["Segment_Norm"], r["Marque_Norm"], r["Article_Norm"], r["Agence_Norm"], r["Mois_Norm"]): r["Poids_Art"]
-        for _, r in grp_art.iterrows()
-        if r["Poids_Art"] > 0
-    }
-    poids_sku_only_map = {}
-    for (_, _, art, ag, m), p in poids_art_map.items():
-        poids_sku_only_map[(art, ag, m)] = poids_sku_only_map.get((art, ag, m), 0.0) + p
-    sku_sums = {}
-    for (art, _, _), p in poids_sku_only_map.items():
-        sku_sums[art] = sku_sums.get(art, 0.0) + p
-    for k in list(poids_sku_only_map.keys()):
-        s = sku_sums.get(k[0], 0.0)
-        poids_sku_only_map[k] = poids_sku_only_map[k] / s if s > 0 else 0.0
-
-    poids_glob_map = {(r["Agence_Norm"], r["Mois_Norm"]): r["Poids_Glob"] for _, r in grp_glob.iterrows()}
-
+    # 3. Poids combiné Agence * Mois (somme sur les 15 agences x 12 mois = 1.0)
     rows_final = []
     for _, r in df_base.iterrows():
-        seg = r["Segment"]
-        marq = r["Marque"]
-        sku = r["SKU"]
-        has_exact = any(k[0] == seg and k[1] == marq and k[2] == sku for k in poids_art_map.keys())
-        has_sku = any(k[0] == sku for k in poids_sku_only_map.keys())
-
         for ag in agences_liste:
+            p_ag = poids_agence_map.get(ag, 0.0)
             for m in MOIS:
-                if has_exact:
-                    w = poids_art_map.get((seg, marq, sku, ag, m), 0.0)
-                elif has_sku:
-                    w = poids_sku_only_map.get((sku, ag, m), 0.0)
-                else:
-                    w = poids_glob_map.get((ag, m), 0.0)
+                p_m = poids_mois_map.get((ag, m), 1.0 / len(MOIS))
                 rows_final.append({
-                    "Segment": seg,
-                    "Marque": marq,
-                    "Article": sku,
+                    "Segment": r["Segment"],
+                    "Marque": r["Marque"],
+                    "Article": r["SKU"],
                     "Agence": ag,
                     "Mois": m,
-                    "Poids_Dispatch": w,
+                    "Poids_Dispatch": p_ag * p_m,
                 })
 
     return agences_liste, pd.DataFrame(rows_final)
