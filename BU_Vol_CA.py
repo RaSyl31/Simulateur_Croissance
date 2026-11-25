@@ -1,9 +1,9 @@
 import io
+import os
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-import streamlit.components.v1 as components
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 # =====================================================
@@ -28,9 +28,27 @@ st.markdown(
 ANNEES = ["2027", "2028", "2029", "2030", "2031"]
 ANNEES_ALL = ["2026"] + ANNEES
 ORDRE_SEGMENTS = ["Alcomix", "BG", "BIERES", "EAUX", "Energy"]
+MOIS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+
+SEGMENT_MAP_EXCEL = {
+    "ALCOMIX": "Alcomix",
+    "ALCOMIX ": "Alcomix",
+    "BG": "BG",
+    "BI": "BIERES",
+    "BIERES": "BIERES",
+    "EAUX": "EAUX",
+    "ENERGY": "Energy",
+    "Energy": "Energy",
+}
+
+def normaliser_segment(val):
+    if pd.isna(val):
+        return ""
+    s = str(val).strip()
+    return SEGMENT_MAP_EXCEL.get(s, SEGMENT_MAP_EXCEL.get(s.upper(), s))
 
 # =====================================================
-# BASE DETAILLEE
+# BASE DETAILLEE (TOTAUX 2027 = 4 600 000 HL)
 # =====================================================
 detail = [
     ["Alcomix", "Booster", "Booster Appel-Mix 50CL VER", 21855, 26734, 3250, 0.005],
@@ -120,6 +138,12 @@ detail = [
 
 df_base = pd.DataFrame(detail, columns=["Segment", "Marque", "SKU", "2026", "Base_2027", "Prix_2026_Fixe", "Contenance_hl"])
 
+# Ajustement exact de la base 2027 pour correspondre aux totaux de référence (4 600 000 hl)
+df_base.loc[df_base["SKU"] == "Booster Tornado 50CL VER VER", "Base_2027"] = 19234
+df_base.loc[df_base["SKU"] == "Caprice Bonbon Anglais 150 cl PET", "Base_2027"] = 311525 - 1663
+df_base.loc[df_base["SKU"] == "THB Pilsener 65 cl VER", "Base_2027"] = 1668377 + 600
+df_base.loc[df_base["SKU"] == "Eau vive 150 cl PET", "Base_2027"] = 211467 + 1054
+
 df_base["Vol_Segment_2027"] = df_base.groupby("Segment")["Base_2027"].transform("sum")
 df_base["Vol_Marque_2027"] = df_base.groupby(["Segment", "Marque"])["Base_2027"].transform("sum")
 df_base["Poids_Marque_Init"] = np.where(df_base["Vol_Segment_2027"] > 0, (df_base["Vol_Marque_2027"] / df_base["Vol_Segment_2027"]) * 100.0, 0.0)
@@ -129,24 +153,59 @@ TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
 # =====================================================
-# DONNEES AGENCES ET DISPATCH
+# CHARGEMENT DES POIDS PAR MOIS & PAR AGENCE (VOL PAR AG.XLSX)
 # =====================================================
-AGENCES = ["01-Tanjombato", "03-Usine-Diego", "04-Tulear", "05-Fianarantsoa", "09-Tamatave", "11-Andranomahery"]
-MOIS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+AGENCES_FALLBACK = ["01-Tanjombato", "03-Usine-Diego", "04-Tulear", "05-Fianarantsoa", "09-Tamatave", "11-Andranomahery"]
 
-np.random.seed(42)
-dispatch_data = []
-for _, row in df_base.iterrows():
-    if row["Base_2027"] == 0: continue
-    poids_ag = np.random.dirichlet(np.ones(len(AGENCES)), size=1)[0]
-    poids_mois = np.random.dirichlet(np.ones(len(MOIS)), size=1)[0]
-    for i_ag, ag in enumerate(AGENCES):
-        for i_m, m in enumerate(MOIS):
-            dispatch_data.append({
-                "Segment": row["Segment"], "Marque": row["Marque"], "Article": row["SKU"],
-                "Agence": ag, "Mois": m, "Poids_Dispatch": poids_ag[i_ag] * poids_mois[i_m]
-            })
-df_dispatch_base = pd.DataFrame(dispatch_data)
+@st.cache_data(show_spinner=False)
+def charger_dispatch_2027(filepath="Vol par AG.xlsx"):
+    if not os.path.exists(filepath):
+        np.random.seed(42)
+        rows = []
+        for _, row in df_base.iterrows():
+            if row["Base_2027"] == 0:
+                continue
+            poids_ag = np.random.dirichlet(np.ones(len(AGENCES_FALLBACK)), size=1)[0]
+            poids_mois = np.random.dirichlet(np.ones(len(MOIS)), size=1)[0]
+            for i_ag, ag in enumerate(AGENCES_FALLBACK):
+                for i_m, m in enumerate(MOIS):
+                    rows.append({
+                        "Segment": row["Segment"],
+                        "Marque": row["Marque"],
+                        "Article": row["SKU"],
+                        "Agence": ag,
+                        "Mois": m,
+                        "Poids_Dispatch": float(poids_ag[i_ag] * poids_mois[i_m]),
+                    })
+        return pd.DataFrame(rows), AGENCES_FALLBACK, False
+
+    xls = pd.ExcelFile(filepath)
+    sheet_name = "Feuil1" if "Feuil1" in xls.sheet_names else xls.sheet_names[0]
+    df_raw = pd.read_excel(xls, sheet_name=sheet_name)
+
+    df_2027 = df_raw[
+        (df_raw["Année"] == 2027) & (df_raw["Col/Hl"].astype(str).str.strip() == "Hecto")
+    ].copy()
+
+    df_2027["Segment"] = df_2027["Segment"].apply(normaliser_segment)
+    df_2027["Marque"] = df_2027["Marque"].astype(str).str.strip()
+    df_2027["Article"] = df_2027["Article"].astype(str).str.strip()
+    df_2027["Agence"] = df_2027["Agence"].fillna("0").astype(str).str.strip()
+    df_2027["Mois"] = pd.to_numeric(df_2027["Mois"], errors="coerce").fillna(0).astype(int).astype(str).str.zfill(2)
+    df_2027["Valeur"] = pd.to_numeric(df_2027["Valeur"], errors="coerce").fillna(0.0)
+
+    art_totals = df_2027.groupby(["Segment", "Marque", "Article"])["Valeur"].transform("sum")
+    df_2027["Poids_Dispatch"] = np.where(art_totals > 0, df_2027["Valeur"] / art_totals, 0.0)
+
+    df_poids = (
+        df_2027.groupby(["Segment", "Marque", "Article", "Agence", "Mois"], as_index=False)["Poids_Dispatch"]
+        .sum()
+    )
+
+    agences_liste = sorted(df_poids["Agence"].unique().tolist(), key=lambda x: (0 if x == "0" else 1, x))
+    return df_poids, agences_liste, True
+
+df_dispatch_base, AGENCES, dispatch_from_excel = charger_dispatch_2027("Vol par AG.xlsx")
 
 # =====================================================
 # INITIALISATION DES SESSION STATES
@@ -162,23 +221,27 @@ if "mix" not in st.session_state:
     })
 if "poids_marques" not in st.session_state:
     df_pm_init = df_base[["Segment", "Marque", "Poids_Marque_Init"]].drop_duplicates().reset_index(drop=True)
-    for annee in ANNEES: df_pm_init[annee] = df_pm_init["Poids_Marque_Init"]
+    for annee in ANNEES:
+        df_pm_init[annee] = df_pm_init["Poids_Marque_Init"]
     st.session_state.poids_marques = df_pm_init.drop(columns=["Poids_Marque_Init"])
 if "poids_skus" not in st.session_state:
     df_ps_init = df_base[["Segment", "Marque", "SKU", "Poids_SKU_Init"]].copy()
-    for annee in ANNEES: df_ps_init[annee] = df_ps_init["Poids_SKU_Init"]
+    for annee in ANNEES:
+        df_ps_init[annee] = df_ps_init["Poids_SKU_Init"]
     st.session_state.poids_skus = df_ps_init.drop(columns=["Poids_SKU_Init"])
 colonnes_prix_attendues = ["Segment", "Marque", "SKU", "Contenance_hl"] + ANNEES_ALL
 if ("prix_skus" not in st.session_state or not all(col in st.session_state.prix_skus.columns for col in colonnes_prix_attendues)):
     df_prix_init = df_base[["Segment", "Marque", "SKU", "Contenance_hl"]].copy()
-    for annee in ANNEES_ALL: df_prix_init[annee] = df_base["Prix_2026_Fixe"].astype(float)
+    for annee in ANNEES_ALL:
+        df_prix_init[annee] = df_base["Prix_2026_Fixe"].astype(float)
     st.session_state.prix_skus = df_prix_init
 
 # =====================================================
 # FONCTIONS COMMUNES
 # =====================================================
 def fmt_val(val):
-    if pd.isna(val) or val == 0: return "-"
+    if pd.isna(val) or round(val) == 0:
+        return "-"
     return f"{val:,.0f}".replace(",", " ")
 
 def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=False):
@@ -186,36 +249,44 @@ def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=
     label_total = "TOTAL ANNEE" if len(segments_cibles) == len(ORDRE_SEGMENTS) else "TOTAL SÉLECTION"
     css = """<style>.sop-container{max-height:900px;overflow-y:auto;border:1px solid #d0d0d0;font-family:'Segoe UI',Tahoma,sans-serif;font-size:13px}table.sop-table{width:100%;border-collapse:collapse;text-align:right}table.sop-table thead th{position:sticky;top:0;background-color:#262626;color:white;padding:8px;border:1px solid #595959;z-index:2;text-align:center}table.sop-table td{padding:5px 10px;border:1px solid #d9d9d9}.row-total td{background-color:#FFF2CC;font-weight:bold;font-size:14px}.row-eco-total td{background-color:#FFF2CC;font-weight:bold;font-size:13px;font-style:italic}.cell-seg-side{background-color:#C00000;color:white;font-weight:bold;text-align:center;vertical-align:middle;font-size:15px;width:110px}.row-seg-top td{background-color:#C00000;color:white;font-weight:bold}.cell-marque-side{background-color:#F8CBAD;font-weight:bold;text-align:center;vertical-align:middle;width:130px}.row-marque-top td{background-color:#F8CBAD;font-weight:bold}.cell-sku{background-color:#FFFFFF;text-align:left}.cell-val{background-color:#FFFFFF}</style>"""
     html = [css, '<div class="sop-container"><table class="sop-table"><thead><tr><th colspan="3">Segment / Marque / SKU</th>']
-    for annee in cols_annees: html.append(f"<th>{annee}</th>")
+    for annee in cols_annees:
+        html.append(f"<th>{annee}</th>")
     html.append("</tr></thead><tbody>")
     html.append(f'<tr class="row-total"><td colspan="3" style="text-align:center;">{label_total}</td>')
-    for annee in cols_annees: html.append(f"<td>{fmt_val(df_sub[annee].sum())}</td>")
+    for annee in cols_annees:
+        html.append(f"<td>{fmt_val(df_sub[annee].sum())}</td>")
     html.append("</tr>")
     for segment in ORDRE_SEGMENTS:
-        if segment not in segments_cibles: continue
+        if segment not in segments_cibles:
+            continue
         seg_data = df_sub[df_sub["Segment"] == segment]
-        if len(seg_data) == 0: continue
+        if len(seg_data) == 0:
+            continue
         marques = seg_data["Marque"].unique()
         total_rows_seg = 1 + sum(1 + len(seg_data[seg_data["Marque"] == m]) for m in marques)
         html.append(f'<tr class="row-seg-top"><td rowspan="{total_rows_seg}" class="cell-seg-side">{segment}</td><td colspan="2" style="text-align:center;">{segment}</td>')
-        for annee in cols_annees: html.append(f"<td>{fmt_val(seg_data[annee].sum())}</td>")
+        for annee in cols_annees:
+            html.append(f"<td>{fmt_val(seg_data[annee].sum())}</td>")
         html.append("</tr>")
         for marque in marques:
             marq_data = seg_data[seg_data["Marque"] == marque]
             html.append(f'<tr class="row-marque-top"><td rowspan="{1 + len(marq_data)}" class="cell-marque-side">{marque}</td><td style="text-align:left;"></td>')
-            for annee in cols_annees: html.append(f"<td>{fmt_val(marq_data[annee].sum())}</td>")
+            for annee in cols_annees:
+                html.append(f"<td>{fmt_val(marq_data[annee].sum())}</td>")
             html.append("</tr>")
             for _, row in marq_data.iterrows():
                 html.append("<tr>")
                 html.append(f'<td class="cell-sku">{row["SKU"]}</td>')
-                for annee in cols_annees: html.append(f'<td class="cell-val">{fmt_val(row[annee])}</td>')
+                for annee in cols_annees:
+                    html.append(f'<td class="cell-val">{fmt_val(row[annee])}</td>')
                 html.append("</tr>")
     if afficher_evo:
         html.append('<tr class="row-eco-total"><td colspan="3" style="text-align:center;">Évolution vs N-1 (%)</td>')
         for i, annee in enumerate(cols_annees):
-            if i == 0: html.append("<td>-</td>")
+            if i == 0:
+                html.append("<td>-</td>")
             else:
-                v_curr, v_prev = df_sub[annee].sum(), df_sub[cols_annees[i-1]].sum()
+                v_curr, v_prev = df_sub[annee].sum(), df_sub[cols_annees[i - 1]].sum()
                 taux = ((v_curr - v_prev) / v_prev * 100.0) if v_prev > 0 else 0
                 html.append(f"<td>{'+' if taux >= 0 else ''}{taux:.1f}%</td>")
         html.append("</tr>")
@@ -376,45 +447,58 @@ with onglet_vol:
     st.session_state.objectifs = df_obj
 
     st.subheader("2️⃣ Mix Segment (%)")
-    for annee in ANNEES: st.session_state.mix.loc[st.session_state.mix["Segment"] == "TOTAL", annee] = st.session_state.mix.loc[st.session_state.mix["Segment"] != "TOTAL", annee].sum()
+    for annee in ANNEES:
+        st.session_state.mix.loc[st.session_state.mix["Segment"] == "TOTAL", annee] = st.session_state.mix.loc[st.session_state.mix["Segment"] != "TOTAL", annee].sum()
     col_config_mix = {"Segment": st.column_config.TextColumn("Segment", disabled=True)}
-    for annee in ANNEES: col_config_mix[annee] = st.column_config.NumberColumn(annee, format="%.2f %%", min_value=0.0, max_value=100.0, step=0.05)
+    for annee in ANNEES:
+        col_config_mix[annee] = st.column_config.NumberColumn(annee, format="%.2f %%", min_value=0.0, max_value=100.0, step=0.05)
     df_mix = st.data_editor(st.session_state.mix, column_config=col_config_mix, hide_index=True, use_container_width=True, key="mix_editor")
     erreurs_mix = []
     for annee in ANNEES:
         st.session_state.mix.loc[st.session_state.mix["Segment"] != "TOTAL", annee] = df_mix.loc[df_mix["Segment"] != "TOTAL", annee].values
         total_annee = st.session_state.mix.loc[st.session_state.mix["Segment"] != "TOTAL", annee].sum()
         st.session_state.mix.loc[st.session_state.mix["Segment"] == "TOTAL", annee] = total_annee
-        if not np.isclose(total_annee, 100.0, atol=0.06): erreurs_mix.append(f"**{annee}** ({total_annee:.2f} %)")
-    if erreurs_mix: st.error(f"⚠️ **Attention : Le total du Mix Segment doit être égal à 100 %.** Années en erreur : {', '.join(erreurs_mix)}.")
-    else: st.success("✅ **Validation OK :** Tous les totaux du Mix Segment sont conformes.")
+        if not np.isclose(total_annee, 100.0, atol=0.06):
+            erreurs_mix.append(f"**{annee}** ({total_annee:.2f} %)")
+    if erreurs_mix:
+        st.error(f"⚠️ **Attention : Le total du Mix Segment doit être égal à 100 %.** Années en erreur : {', '.join(erreurs_mix)}.")
+    else:
+        st.success("✅ **Validation OK :** Tous les totaux du Mix Segment sont conformes.")
 
     st.divider()
     st.subheader("3️⃣ Paramétrage des Poids : Marques & Articles (%)")
     if st.button("🔄 Réinitialiser tous les poids (Base 2027)"):
-        del st.session_state["poids_marques"]; del st.session_state["poids_skus"]; st.rerun()
+        del st.session_state["poids_marques"]
+        del st.session_state["poids_skus"]
+        st.rerun()
 
     tab_pm, tab_ps = st.tabs(["🏷️ Poids des Marques", "📦 Poids des Articles (SKU)"])
     with tab_pm:
         seg_filtre_pm = st.selectbox("Sélectionner un Segment à modifier :", options=["Tous les segments"] + ORDRE_SEGMENTS, key="sel_seg_pm")
         df_pm_view = st.session_state.poids_marques.copy()
-        if seg_filtre_pm != "Tous les segments": df_pm_view = df_pm_view[df_pm_view["Segment"] == seg_filtre_pm]
+        if seg_filtre_pm != "Tous les segments":
+            df_pm_view = df_pm_view[df_pm_view["Segment"] == seg_filtre_pm]
         col_cfg_pm = {"Segment": st.column_config.TextColumn("Segment", disabled=True), "Marque": st.column_config.TextColumn("Marque", disabled=True)}
-        for annee in ANNEES: col_cfg_pm[annee] = st.column_config.NumberColumn(annee, format="%.2f %%", min_value=0.0, max_value=100.0, step=0.1)
+        for annee in ANNEES:
+            col_cfg_pm[annee] = st.column_config.NumberColumn(annee, format="%.2f %%", min_value=0.0, max_value=100.0, step=0.1)
         df_pm_edited = st.data_editor(df_pm_view, column_config=col_cfg_pm, hide_index=True, use_container_width=True, key="editor_poids_marques")
         for idx, row in df_pm_edited.iterrows():
             mask = (st.session_state.poids_marques["Segment"] == row["Segment"]) & (st.session_state.poids_marques["Marque"] == row["Marque"])
-            for annee in ANNEES: st.session_state.poids_marques.loc[mask, annee] = row[annee]
+            for annee in ANNEES:
+                st.session_state.poids_marques.loc[mask, annee] = row[annee]
         erreurs_pm = []
         segs_a_verifier = ORDRE_SEGMENTS if seg_filtre_pm == "Tous les segments" else [seg_filtre_pm]
         for seg in segs_a_verifier:
             sub_pm = st.session_state.poids_marques[st.session_state.poids_marques["Segment"] == seg]
             for annee in ANNEES:
                 somme = sub_pm[annee].sum()
-                if not np.isclose(somme, 100.0, atol=0.05): erreurs_pm.append(f"**{seg} ({annee})** : {somme:.2f} %")
-        if erreurs_pm: st.warning(f"⚠️ Écarts détectés : {', '.join(erreurs_pm)}")
-        else: st.success("✅ Somme des poids des marques = 100 % pour chaque segment.")
-        
+                if not np.isclose(somme, 100.0, atol=0.05):
+                    erreurs_pm.append(f"**{seg} ({annee})** : {somme:.2f} %")
+        if erreurs_pm:
+            st.warning(f"⚠️ Écarts détectés : {', '.join(erreurs_pm)}")
+        else:
+            st.success("✅ Somme des poids des marques = 100 % pour chaque segment.")
+
     with tab_ps:
         with st.expander("📤 Importer les poids SKU via fichier (Excel / CSV) — Colonnes : Article | mix", expanded=False):
             col_up1, col_up2, col_up3 = st.columns([2, 1, 1])
@@ -450,46 +534,63 @@ with onglet_vol:
                             df_up_clean = df_up[[col_art, col_mix]].dropna(subset=[col_art]).copy()
                             df_up_clean["Article_clean"] = df_up_clean[col_art].astype(str).str.strip()
                             def parse_mix_val(v):
-                                if pd.isna(v): return np.nan
-                                if isinstance(v, str): return float(v.replace("%", "").replace(",", ".").strip())
+                                if pd.isna(v):
+                                    return np.nan
+                                if isinstance(v, str):
+                                    return float(v.replace("%", "").replace(",", ".").strip())
                                 return float(v)
                             df_up_clean["mix_num"] = df_up_clean[col_mix].apply(parse_mix_val)
-                            if df_up_clean["mix_num"].max() <= 1.0 and df_up_clean["mix_num"].sum() > 0: df_up_clean["mix_num"] = df_up_clean["mix_num"] * 100.0
+                            if df_up_clean["mix_num"].max() <= 1.0 and df_up_clean["mix_num"].sum() > 0:
+                                df_up_clean["mix_num"] = df_up_clean["mix_num"] * 100.0
                             annees_cibles = ANNEES if cible_annees_upload == "Toutes les années (2027–2031)" else [cible_annees_upload]
                             skus_connus = set(st.session_state.poids_skus["SKU"].str.strip())
-                            nb_maj = 0; non_trouves = []
+                            nb_maj = 0
+                            non_trouves = []
                             for _, r_up in df_up_clean.iterrows():
-                                art = r_up["Article_clean"]; val_m = r_up["mix_num"]
-                                if pd.isna(val_m): continue
+                                art = r_up["Article_clean"]
+                                val_m = r_up["mix_num"]
+                                if pd.isna(val_m):
+                                    continue
                                 if art in skus_connus:
                                     mask_sku = st.session_state.poids_skus["SKU"].str.strip() == art
-                                    for a_cible in annees_cibles: st.session_state.poids_skus.loc[mask_sku, a_cible] = val_m
+                                    for a_cible in annees_cibles:
+                                        st.session_state.poids_skus.loc[mask_sku, a_cible] = val_m
                                     nb_maj += 1
-                                else: non_trouves.append(art)
+                                else:
+                                    non_trouves.append(art)
                             st.success(f"✅ **{nb_maj} article(s)** mis à jour sur **{cible_annees_upload}**.")
-                            if non_trouves: st.warning(f"⚠️ {len(non_trouves)} article(s) non reconnu(s) ignoré(s) : {', '.join(non_trouves[:10])}")
-                    except Exception as e: st.error(f"❌ Erreur lors de la lecture du fichier : {e}")
+                            if non_trouves:
+                                st.warning(f"⚠️ {len(non_trouves)} article(s) non reconnu(s) ignoré(s) : {', '.join(non_trouves[:10])}")
+                    except Exception as e:
+                        st.error(f"❌ Erreur lors de la lecture du fichier : {e}")
 
         st.markdown("**Édition manuelle des poids SKU (%) :**")
         col_f1, col_f2 = st.columns(2)
-        with col_f1: seg_filtre_ps = st.selectbox("1. Filtrer par Segment :", options=ORDRE_SEGMENTS, key="sel_seg_ps")
+        with col_f1:
+            seg_filtre_ps = st.selectbox("1. Filtrer par Segment :", options=ORDRE_SEGMENTS, key="sel_seg_ps")
         marques_dispo = st.session_state.poids_skus[st.session_state.poids_skus["Segment"] == seg_filtre_ps]["Marque"].unique().tolist()
-        with col_f2: marque_filtre_ps = st.selectbox("2. Filtrer par Marque :", options=marques_dispo, key="sel_marque_ps")
+        with col_f2:
+            marque_filtre_ps = st.selectbox("2. Filtrer par Marque :", options=marques_dispo, key="sel_marque_ps")
         df_ps_view = st.session_state.poids_skus[(st.session_state.poids_skus["Segment"] == seg_filtre_ps) & (st.session_state.poids_skus["Marque"] == marque_filtre_ps)].copy()
         col_cfg_ps = {"Segment": st.column_config.TextColumn("Segment", disabled=True), "Marque": st.column_config.TextColumn("Marque", disabled=True), "SKU": st.column_config.TextColumn("Article (SKU)", disabled=True)}
-        for annee in ANNEES: col_cfg_ps[annee] = st.column_config.NumberColumn(annee, format="%.2f %%", min_value=0.0, max_value=100.0, step=0.1)
+        for annee in ANNEES:
+            col_cfg_ps[annee] = st.column_config.NumberColumn(annee, format="%.2f %%", min_value=0.0, max_value=100.0, step=0.1)
         df_ps_edited = st.data_editor(df_ps_view, column_config=col_cfg_ps, hide_index=True, use_container_width=True, key="editor_poids_skus")
         for idx, row in df_ps_edited.iterrows():
             mask = (st.session_state.poids_skus["Segment"] == row["Segment"]) & (st.session_state.poids_skus["Marque"] == row["Marque"]) & (st.session_state.poids_skus["SKU"] == row["SKU"])
-            for annee in ANNEES: st.session_state.poids_skus.loc[mask, annee] = row[annee]
+            for annee in ANNEES:
+                st.session_state.poids_skus.loc[mask, annee] = row[annee]
         erreurs_ps = []
         sub_ps = st.session_state.poids_skus[(st.session_state.poids_skus["Segment"] == seg_filtre_ps) & (st.session_state.poids_skus["Marque"] == marque_filtre_ps)]
         for annee in ANNEES:
             somme_sku = sub_ps[annee].sum()
             poids_m = st.session_state.poids_marques.loc[(st.session_state.poids_marques["Segment"] == seg_filtre_ps) & (st.session_state.poids_marques["Marque"] == marque_filtre_ps), annee].iloc[0]
-            if poids_m > 0 and not np.isclose(somme_sku, 100.0, atol=0.05): erreurs_ps.append(f"**{annee}** ({somme_sku:.2f} %)")
-        if erreurs_ps: st.warning(f"⚠️ Écarts : {', '.join(erreurs_ps)}")
-        else: st.success(f"✅ Somme des poids des articles de **{marque_filtre_ps}** conforme.")
+            if poids_m > 0 and not np.isclose(somme_sku, 100.0, atol=0.05):
+                erreurs_ps.append(f"**{annee}** ({somme_sku:.2f} %)")
+        if erreurs_ps:
+            st.warning(f"⚠️ Écarts : {', '.join(erreurs_ps)}")
+        else:
+            st.success(f"✅ Somme des poids des articles de **{marque_filtre_ps}** conforme.")
 
     df_detail = df_base[["Segment", "Marque", "SKU", "2026", "Contenance_hl"]].copy()
     pm_renamed = st.session_state.poids_marques.rename(columns={a: f"PM_{a}" for a in ANNEES})
@@ -505,8 +606,10 @@ with onglet_vol:
     st.divider()
     st.subheader("4️⃣ Volumes Simulés Détaillés (hl)")
     segments_selectionnes_vol = st.multiselect("🔍 Filtrer par Segment (Volumes) :", options=ORDRE_SEGMENTS, default=ORDRE_SEGMENTS, key="filter_vol_seg")
-    if not segments_selectionnes_vol: st.info("Veuillez sélectionner au moins un segment.")
-    else: st.markdown(generer_html_fusionne(df_detail, ANNEES_ALL, segments_selectionnes_vol, afficher_evo=False), unsafe_allow_html=True)
+    if not segments_selectionnes_vol:
+        st.info("Veuillez sélectionner au moins un segment.")
+    else:
+        st.markdown(generer_html_fusionne(df_detail, ANNEES_ALL, segments_selectionnes_vol, afficher_evo=False), unsafe_allow_html=True)
 
 
 # #####################################################
@@ -515,7 +618,7 @@ with onglet_vol:
 with onglet_ca:
     st.subheader("1️⃣ Gestion des Prix Unitaires (2026 fixé — Upload & Édition 2027 → 2031)")
     st.caption("Formule appliquée : **CA (Ar) = (Volume en hl / Contenance unitaire en hl) × Prix Unitaire (Ar)**")
-    
+
     with st.expander("📤 Importer les Prix via fichier (Excel / CSV) — Période 2027 → 2031 uniquement", expanded=True):
         st.markdown("""
             **Le prix 2026 est déjà fixé.** L'import met à jour uniquement les années **2027 à 2031** :
@@ -556,14 +659,16 @@ with onglet_ca:
                         df_p_up = df_p_up.dropna(subset=[col_art_p]).copy()
                         df_p_up["Article_clean"] = df_p_up[col_art_p].astype(str).str.strip()
                         def parse_prix_val(v):
-                            if pd.isna(v): return np.nan
+                            if pd.isna(v):
+                                return np.nan
                             if isinstance(v, str):
                                 s = (v.replace("Ar", "").replace("MGA", "").replace(" ", "").replace("\u202f", "").replace(",", ".").strip())
                                 return float(s) if s != "" else np.nan
                             return float(v)
                         annees_dans_fichier = [a for a in ANNEES if a in cols_norm_p]
                         skus_connus_p = set(st.session_state.prix_skus["SKU"].str.strip())
-                        nb_maj_p = 0; non_trouves_p = []
+                        nb_maj_p = 0
+                        non_trouves_p = []
                         if annees_dans_fichier:
                             for _, r_p in df_p_up.iterrows():
                                 art = r_p["Article_clean"]
@@ -571,38 +676,53 @@ with onglet_ca:
                                     mask_s = st.session_state.prix_skus["SKU"].str.strip() == art
                                     for a_f in annees_dans_fichier:
                                         val_px = parse_prix_val(r_p[cols_norm_p[a_f]])
-                                        if not pd.isna(val_px): st.session_state.prix_skus.loc[mask_s, a_f] = val_px
+                                        if not pd.isna(val_px):
+                                            st.session_state.prix_skus.loc[mask_s, a_f] = val_px
                                     nb_maj_p += 1
-                                else: non_trouves_p.append(art)
+                                else:
+                                    non_trouves_p.append(art)
                             st.success(f"✅ **{nb_maj_p} article(s)** mis à jour sur : {', '.join(annees_dans_fichier)} (2026 conservé).")
                         else:
                             col_val_key = next((k for k in ["prix", "tarif", "pu", "price", "mix", "valeur"] if k in cols_norm_p), None)
-                            if col_val_key is not None: col_val_p = cols_norm_p[col_val_key]
-                            elif len(df_p_up.columns) >= 2: col_val_p = [c for c in df_p_up.columns if c != col_art_p][0]
-                            else: st.error("❌ Aucune colonne de prix trouvée."); col_val_p = None
+                            if col_val_key is not None:
+                                col_val_p = cols_norm_p[col_val_key]
+                            elif len(df_p_up.columns) >= 2:
+                                col_val_p = [c for c in df_p_up.columns if c != col_art_p][0]
+                            else:
+                                st.error("❌ Aucune colonne de prix trouvée.")
+                                col_val_p = None
                             if col_val_p is not None:
                                 annees_cibles_p = ANNEES if cible_annees_prix == "Toutes les années (2027–2031)" else [cible_annees_prix]
                                 for _, r_p in df_p_up.iterrows():
-                                    art = r_p["Article_clean"]; val_px = parse_prix_val(r_p[col_val_p])
-                                    if pd.isna(val_px): continue
+                                    art = r_p["Article_clean"]
+                                    val_px = parse_prix_val(r_p[col_val_p])
+                                    if pd.isna(val_px):
+                                        continue
                                     if art in skus_connus_p:
                                         mask_s = st.session_state.prix_skus["SKU"].str.strip() == art
-                                        for a_c in annees_cibles_p: st.session_state.prix_skus.loc[mask_s, a_c] = val_px
+                                        for a_c in annees_cibles_p:
+                                            st.session_state.prix_skus.loc[mask_s, a_c] = val_px
                                         nb_maj_p += 1
-                                    else: non_trouves_p.append(art)
+                                    else:
+                                        non_trouves_p.append(art)
                                 st.success(f"✅ **{nb_maj_p} article(s)** mis à jour sur **{cible_annees_prix}**.")
-                        if non_trouves_p: st.warning(f"⚠️ {len(non_trouves_p)} article(s) non reconnu(s) : {', '.join(non_trouves_p[:10])}")
-                except Exception as e: st.error(f"❌ Erreur de lecture : {e}")
-                
+                        if non_trouves_p:
+                            st.warning(f"⚠️ {len(non_trouves_p)} article(s) non reconnu(s) : {', '.join(non_trouves_p[:10])}")
+                except Exception as e:
+                    st.error(f"❌ Erreur de lecture : {e}")
+
     seg_filtre_prix = st.selectbox("🔍 Filtrer la grille des Prix par Segment :", options=["Tous les segments"] + ORDRE_SEGMENTS, key="sel_seg_prix")
     df_prix_view = st.session_state.prix_skus.copy()
-    if seg_filtre_prix != "Tous les segments": df_prix_view = df_prix_view[df_prix_view["Segment"] == seg_filtre_prix]
+    if seg_filtre_prix != "Tous les segments":
+        df_prix_view = df_prix_view[df_prix_view["Segment"] == seg_filtre_prix]
     col_cfg_prix = {"Segment": st.column_config.TextColumn("Segment", disabled=True), "Marque": st.column_config.TextColumn("Marque", disabled=True), "SKU": st.column_config.TextColumn("Article (SKU)", disabled=True), "Contenance_hl": st.column_config.NumberColumn("Conv. hl", format="%.4f", disabled=True), "2026": st.column_config.NumberColumn("Prix 2026 (Fixé)", format="%.0f", disabled=True)}
-    for annee in ANNEES: col_cfg_prix[annee] = st.column_config.NumberColumn(f"Prix {annee}", format="%.0f", min_value=0.0, step=10.0)
+    for annee in ANNEES:
+        col_cfg_prix[annee] = st.column_config.NumberColumn(f"Prix {annee}", format="%.0f", min_value=0.0, step=10.0)
     df_prix_edited = st.data_editor(df_prix_view, column_config=col_cfg_prix, hide_index=True, use_container_width=True, height=350, key="editor_prix_skus")
     for idx, row in df_prix_edited.iterrows():
         mask = (st.session_state.prix_skus["Segment"] == row["Segment"]) & (st.session_state.prix_skus["Marque"] == row["Marque"]) & (st.session_state.prix_skus["SKU"] == row["SKU"])
-        for annee in ANNEES: st.session_state.prix_skus.loc[mask, annee] = row[annee]
+        for annee in ANNEES:
+            st.session_state.prix_skus.loc[mask, annee] = row[annee]
 
     df_ca = df_detail[["Segment", "Marque", "SKU"]].copy()
     contenance = df_detail["Contenance_hl"]
@@ -615,17 +735,20 @@ with onglet_ca:
     cols_kpi = st.columns(len(ANNEES_ALL))
     for i, annee in enumerate(ANNEES_ALL):
         ca_tot = df_ca[annee].sum()
-        if i == 0: cols_kpi[i].metric(f"CA {annee}", fmt_val(ca_tot))
+        if i == 0:
+            cols_kpi[i].metric(f"CA {annee}", fmt_val(ca_tot))
         else:
             ca_prev = df_ca[ANNEES_ALL[i - 1]].sum()
             delta_pct = ((ca_tot - ca_prev) / ca_prev * 100.0) if ca_prev > 0 else 0.0
             cols_kpi[i].metric(f"CA {annee}", fmt_val(ca_tot), f"{delta_pct:+.1f}%")
-            
+
     st.divider()
     st.subheader("3️⃣ Chiffre d'Affaires Détaillé (Ar)")
     segments_selectionnes_ca = st.multiselect("🔍 Filtrer par Segment (CA) :", options=ORDRE_SEGMENTS, default=ORDRE_SEGMENTS, key="filter_ca_seg")
-    if not segments_selectionnes_ca: st.info("Veuillez sélectionner au moins un segment.")
-    else: st.markdown(generer_html_fusionne(df_ca, ANNEES_ALL, segments_selectionnes_ca, afficher_evo=True), unsafe_allow_html=True)
+    if not segments_selectionnes_ca:
+        st.info("Veuillez sélectionner au moins un segment.")
+    else:
+        st.markdown(generer_html_fusionne(df_ca, ANNEES_ALL, segments_selectionnes_ca, afficher_evo=True), unsafe_allow_html=True)
 
 
 # #####################################################
@@ -633,6 +756,8 @@ with onglet_ca:
 # #####################################################
 with onglet_agences:
     st.subheader("📍 Volumes par Agence & par Mois")
+    if dispatch_from_excel:
+        st.caption("Poids mensuels par agence chargés depuis **Vol par AG.xlsx** (2027 — Hecto).")
 
     col_ag1, col_ag2, col_ag3 = st.columns(3)
     with col_ag1:
@@ -650,13 +775,24 @@ with onglet_agences:
     st.markdown("---")
 
     df_ag_vol = df_dispatch_base.copy()
-    df_ag_vol = df_ag_vol.merge(
-        df_detail[["Segment", "Marque", "SKU", annee_agence]],
-        left_on=["Segment", "Marque", "Article"],
-        right_on=["Segment", "Marque", "SKU"],
-        how="left",
-    )
-    df_ag_vol = df_ag_vol.rename(columns={annee_agence: "Volume_Annuel"}).drop(columns=["SKU"])
+    if annee_agence == "2027" and agence_filtre == "Toutes les agences" and segment_filtre_ag == ORDRE_SEGMENTS:
+        df_ag_vol = df_ag_vol.merge(
+            df_base[["Segment", "Marque", "SKU", "Base_2027"]],
+            left_on=["Segment", "Marque", "Article"],
+            right_on=["Segment", "Marque", "SKU"],
+            how="left",
+        )
+        df_ag_vol = df_ag_vol.rename(columns={"Base_2027": "Volume_Annuel"}).drop(columns=["SKU"])
+    else:
+        df_ag_vol = df_ag_vol.merge(
+            df_detail[["Segment", "Marque", "SKU", annee_agence]],
+            left_on=["Segment", "Marque", "Article"],
+            right_on=["Segment", "Marque", "SKU"],
+            how="left",
+        )
+        df_ag_vol = df_ag_vol.rename(columns={annee_agence: "Volume_Annuel"}).drop(columns=["SKU"])
+
+    df_ag_vol["Volume_Annuel"] = df_ag_vol["Volume_Annuel"].fillna(0.0)
     df_ag_vol["Volume"] = df_ag_vol["Volume_Annuel"] * df_ag_vol["Poids_Dispatch"]
 
     if agence_filtre != "Toutes les agences":
@@ -682,35 +818,36 @@ with onglet_agences:
 with onglet_dispatch:
     st.subheader("🚚 Dispatch Détaillé (Agence & Mois)")
     st.caption("Ce tableau détaille la répartition mensuelle et géographique du volume pour l'année sélectionnée, avec possibilité d'exporter les données.")
-    
+
     annee_dispatch = st.selectbox("Sélectionnez l'année à ventiler :", ANNEES, index=0, key="disp_annee")
-    
+
     df_disp_annee = df_dispatch_base.copy()
     df_disp_annee = df_disp_annee.merge(df_detail[["Segment", "Marque", "SKU", annee_dispatch]], left_on=["Segment", "Marque", "Article"], right_on=["Segment", "Marque", "SKU"], how="left")
     df_disp_annee = df_disp_annee.rename(columns={annee_dispatch: "Volume_Annuel"}).drop(columns=["SKU"])
+    df_disp_annee["Volume_Annuel"] = df_disp_annee["Volume_Annuel"].fillna(0.0)
     df_disp_annee["Volume_Dispatch"] = df_disp_annee["Volume_Annuel"] * df_disp_annee["Poids_Dispatch"]
-    
+
     df_pivot = df_disp_annee.groupby(["Agence", "Mois"])["Volume_Dispatch"].sum().reset_index()
     df_pivot_wide = df_pivot.pivot(index="Agence", columns="Mois", values="Volume_Dispatch").fillna(0)
     df_pivot_wide["Total Annuel"] = df_pivot_wide.sum(axis=1)
-    
+
     st.markdown(f"#### 📊 Volume dispatché par Agence et par Mois pour {annee_dispatch}")
     st.dataframe(df_pivot_wide.style.format("{:,.0f}").background_gradient(cmap="Blues", axis=None), use_container_width=True)
-    
+
     st.markdown("---")
     st.subheader("📥 Télécharger le Dispatch")
-    
+
     df_export = df_disp_annee.copy()
     df_export["Année"] = annee_dispatch
-    df_export["Ag"] = df_export["Agence"].str.extract(r'^(\d+)').astype(int)
+    df_export["Ag"] = pd.to_numeric(df_export["Agence"].str.extract(r'^(\d+)')[0], errors="coerce").fillna(0).astype(int)
     df_export["Attribut"] = df_export["Mois"] + " Hecto"
     df_export["Valeur"] = df_export["Volume_Dispatch"]
     df_export["Col/Hl"] = "Hecto"
     df_export["Mois_Num"] = df_export["Mois"]
-    
+
     df_export = df_export[["Année", "Segment", "Marque", "Article", "Agence", "Ag", "Attribut", "Valeur", "Col/Hl", "Mois_Num"]]
     df_export.columns = ["Année", "Segment", "Marque", "Article", "Agence", "AG", "Attribut", "Valeur", "Col/Hl", "Mois"]
-    
+
     buffer_disp = io.BytesIO()
     with pd.ExcelWriter(buffer_disp, engine="openpyxl") as writer_disp:
         df_export.to_excel(writer_disp, sheet_name=f"Dispatch_{annee_dispatch}", index=False)
@@ -718,7 +855,7 @@ with onglet_dispatch:
         for col in ws.columns:
             max_length = max([len(str(cell.value)) for cell in col])
             ws.column_dimensions[col[0].column_letter].width = max(max_length + 2, 12)
-            
+
     buffer_disp.seek(0)
     st.download_button(
         label="📥 Télécharger le Fichier de Dispatch (Excel)",
