@@ -144,10 +144,10 @@ mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) *
 @st.cache_data
 def charger_dispatch_depuis_fichier():
     fichiers_candidats = [
+        "Vol par AG_2.xlsx",
         "Vol par AG_5.xlsx",
         "Vol par AG_4.xlsx",
         "Vol par AG_3.xlsx",
-        "Vol par AG_2.xlsx",
         "Vol par AG.xlsx",
     ]
     chemin_fichier = next((f for f in fichiers_candidats if os.path.exists(f)), None)
@@ -177,8 +177,9 @@ def charger_dispatch_depuis_fichier():
     feuille_cible = "Feuil2" if "Feuil2" in xls.sheet_names else xls.sheet_names[0]
     df_xl = pd.read_excel(chemin_fichier, sheet_name=feuille_cible)
 
-    cols_requis = ["Année", "Segment", "Marque", "Article", "Agence", "Volume", "Mois", "Poids"]
-    df_hl = df_xl[cols_requis].copy()
+    col_poids_reel = df_xl.columns[-1] if "Poids" not in df_xl.columns else "Poids"
+    cols_requis = ["Année", "Segment", "Marque", "Article", "Agence", "Volume", "Mois", col_poids_reel]
+    df_hl = df_xl[cols_requis].rename(columns={col_poids_reel: "Poids"}).copy()
     df_hl["Agence_Norm"] = df_hl["Agence"].astype(str).str.strip()
     df_hl = df_hl[df_hl["Agence"].notna() & (df_hl["Agence_Norm"] != "0") & (df_hl["Agence_Norm"] != "")]
 
