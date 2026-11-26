@@ -176,7 +176,7 @@ def _to_float_safe(v):
     if isinstance(v, (int, float, np.number)):
         return float(v)
     s = str(v).replace(" ", "").replace("\u202f", "").replace(",", ".").strip()
-    if s == "" or s.lower() in {"ventehldirect", "total", "agences", "segments", "moisannée"}:
+    if s == "" or s.lower() in {"ventehldirect", "total", "agences", "segments", "marque", "moisannée"}:
         return np.nan
     try:
         return float(s)
@@ -228,7 +228,7 @@ def _extraire_mois_code(val):
     return MOIS_FR_MAP.get(prefix)
 
 def charger_ventes_realisees(uploaded_file):
-    """Charge et normalise un fichier Excel/CSV de ventes réalisées."""
+    """Charge et normalise un fichier Excel/CSV de ventes réalisées (avec hiérarchie Mois année / Segments / Marque / Agences)."""
     if uploaded_file.name.lower().endswith(".csv"):
         try:
             df_raw = pd.read_csv(uploaded_file, sep=None, engine="python")
@@ -242,14 +242,44 @@ def charger_ventes_realisees(uploaded_file):
 
     cols_lower = {str(c).strip().lower(): c for c in df_raw.columns}
 
-    # Cas 1 : format Export ('Total genéral' = Mois année, 'Unnamed: 1' = Segments, 'Unnamed: 2' = Agences, 'Toutes agences' = Vente hl direct)
+    # Format hiérarchique type Export ('Total genéral' = Mois année, 'Unnamed: 1' = Segments, 'Unnamed: 2' = Marque, 'Unnamed: 3' = Agences)
+    if "total genéral" in cols_lower and "unnamed: 1" in cols_lower and "unnamed: 3" in cols_lower:
+        c_ma = cols_lower["total genéral"]
+        c_seg = cols_lower["unnamed: 1"]
+        c_marq = cols_lower.get("unnamed: 2")
+        c_ag = cols_lower["unnamed: 3"]
+        c_vol = cols_lower.get("toutes agences") or cols_lower.get("total")
+        if c_vol is None:
+            raise ValueError("Colonne de volume ('Toutes agences' ou 'Total') introuvable.")
+
+        df_sub = df_raw.copy()
+        df_sub["Mois"] = df_sub[c_ma].apply(_extraire_mois_code)
+        df_sub["Segment"] = df_sub[c_seg].apply(_normaliser_segment)
+        df_sub["Marque_Raw"] = df_sub[c_marq].astype(str).str.strip() if c_marq else ""
+        df_sub["Agence"] = df_sub[c_ag].astype(str).str.strip()
+        df_sub["Vol_Real"] = df_sub[c_vol].apply(_to_float_safe)
+
+        df_clean = df_sub[
+            df_sub["Mois"].isin(MOIS)
+            & df_sub["Segment"].isin(ORDRE_SEGMENTS)
+            & df_sub["Agence"].str.contains("-", na=False)
+            & (~df_sub["Marque_Raw"].str.lower().isin({"total", "nan", "none", ""}))
+            & df_sub["Vol_Real"].notna()
+        ].copy()
+
+        if df_clean.empty:
+            raise ValueError("Aucune ligne d'agence valide détectée dans le fichier.")
+
+        return df_clean.groupby(["Mois", "Segment", "Agence"], as_index=False)["Vol_Real"].sum()
+
+    # Format hiérarchique 3 niveaux sans colonne marque ('Total genéral', 'Unnamed: 1', 'Unnamed: 2')
     if "total genéral" in cols_lower and "unnamed: 1" in cols_lower and "unnamed: 2" in cols_lower:
         c_ma = cols_lower["total genéral"]
         c_seg = cols_lower["unnamed: 1"]
         c_ag = cols_lower["unnamed: 2"]
         c_vol = cols_lower.get("toutes agences") or cols_lower.get("total")
         if c_vol is None:
-            raise ValueError("Colonne de volume ('Toutes agences' ou 'Total') introuvable.")
+            raise ValueError("Colonne de volume introuvable.")
 
         df_sub = df_raw.copy()
         df_sub["Mois"] = df_sub[c_ma].apply(_extraire_mois_code)
@@ -269,7 +299,7 @@ def charger_ventes_realisees(uploaded_file):
 
         return df_clean.groupby(["Mois", "Segment", "Agence"], as_index=False)["Vol_Real"].sum()
 
-    # Cas 2 : format tabulaire explicite (Mois, Segment, Agence, Volume)
+    # Format tabulaire explicite (Mois, Segment, Agence, Volume)
     c_m = next((cols_lower[k] for k in ["mois", "mois année", "periode", "période"] if k in cols_lower), None)
     c_s = next((cols_lower[k] for k in ["segment", "segments"] if k in cols_lower), None)
     c_a = next((cols_lower[k] for k in ["agence", "agences"] if k in cols_lower), None)
@@ -1040,7 +1070,7 @@ with onglet_agences:
 
 
 # #####################################################
-# ONGLET 4 : DISPATCH AGENCE & MOIS (UPLOAD EN HAUT + COMPARAISON DANS LE GRAPHE)
+# ONGLET 4 : DISPATCH AGENCE & MOIS (UPLOAD EN HAUT + EMPILEMENT PAR SEGMENT)
 # #####################################################
 with onglet_dispatch:
     AGENCES = st.session_state.dispatch_agences
@@ -1064,9 +1094,9 @@ with onglet_dispatch:
     with col_d4:
         filtre_agence_disp = st.selectbox("Filtrer par Agence :", ["Toutes les agences"] + AGENCES, key="disp_agence")
 
-    # Upload des ventes réalisées placé en haut
+    # Upload placé en haut de la section
     uploaded_real_file = st.file_uploader(
-        "📤 Charger le fichier Excel / CSV des ventes réalisées (Budget vs Réalisé) :",
+        "📤 Charger le fichier Excel / CSV des ventes réalisées (réalisé arrêté à un mois — Budget vs Réalisé & Reste à faire) :",
         type=["xlsx", "xls", "csv"],
         key="upload_ventes_realisees",
     )
@@ -1099,11 +1129,16 @@ with onglet_dispatch:
     else:
         if df_real_norm is not None:
             mode_vue_comp = st.radio(
-                "Affichage du graphe :",
-                options=["Comparaison Budget vs Réalisé (Mois réalisés)", "Dispatch Budget Complet (12 mois)"],
+                "Mode d'affichage du graphe (empilé par Segment) :",
+                options=[
+                    "Comparaison Budget vs Réalisé (Mois réalisés)",
+                    "Budget vs Réalisé + Reste à faire (Mois réalisés)",
+                    "Dispatch Budget Complet (12 mois)",
+                ],
                 horizontal=True,
                 key="mode_vue_comp",
             )
+
             df_real_filt = df_real_norm.copy()
             if filtre_seg_disp != "Tous les segments":
                 df_real_filt = df_real_filt[df_real_filt["Segment"] == filtre_seg_disp]
@@ -1111,83 +1146,147 @@ with onglet_dispatch:
                 df_real_filt = df_real_filt[df_real_filt["Agence"] == filtre_agence_disp]
 
             mois_presents = sorted([m for m in MOIS if m in set(df_real_filt["Mois"].unique())])
-            mois_cibles = mois_presents if mode_vue_comp.startswith("Comparaison") and mois_presents else MOIS
+            mois_cibles = MOIS if mode_vue_comp.startswith("Dispatch Budget Complet") or not mois_presents else mois_presents
 
-            df_bud_m = (
+            segs_dispo = [s for s in ORDRE_SEGMENTS if filtre_seg_disp == "Tous les segments" or s == filtre_seg_disp]
+
+            idx_grid = pd.MultiIndex.from_product([mois_cibles, segs_dispo], names=["Mois", "Segment"])
+            df_grid = pd.DataFrame(index=idx_grid).reset_index()
+
+            df_b_seg = (
                 df_disp_annee[df_disp_annee["Mois"].isin(mois_cibles)]
-                .groupby("Mois", as_index=False)["Volume_Dispatch"]
+                .groupby(["Mois", "Segment"], as_index=False)["Volume_Dispatch"]
                 .sum()
                 .rename(columns={"Volume_Dispatch": "Budget"})
             )
-            df_rea_m = (
+            df_r_seg = (
                 df_real_filt[df_real_filt["Mois"].isin(mois_cibles)]
-                .groupby("Mois", as_index=False)["Vol_Real"]
+                .groupby(["Mois", "Segment"], as_index=False)["Vol_Real"]
                 .sum()
                 .rename(columns={"Vol_Real": "Réalisé"})
             )
 
-            df_comp_m = pd.DataFrame({"Mois": mois_cibles})
-            df_comp_m = df_comp_m.merge(df_bud_m, on="Mois", how="left").merge(df_rea_m, on="Mois", how="left").fillna(0.0)
-            df_comp_m["Écart (hl)"] = df_comp_m["Réalisé"] - df_comp_m["Budget"]
-            df_comp_m["Écart (%)"] = np.where(
-                df_comp_m["Budget"] > 0,
-                (df_comp_m["Écart (hl)"] / df_comp_m["Budget"]) * 100.0,
-                0.0,
-            )
+            df_ms = df_grid.merge(df_b_seg, on=["Mois", "Segment"], how="left").merge(df_r_seg, on=["Mois", "Segment"], how="left").fillna(0.0)
+            df_ms["Reste à faire"] = (df_ms["Budget"] - df_ms["Réalisé"]).clip(lower=0.0)
+            df_ms["Écart (hl)"] = df_ms["Réalisé"] - df_ms["Budget"]
 
-            df_plot_comp = df_comp_m.melt(
-                id_vars="Mois",
-                value_vars=["Budget", "Réalisé"],
-                var_name="Série",
-                value_name="Volume",
-            )
-            fig_comp = px.bar(
-                df_plot_comp,
-                x="Mois",
-                y="Volume",
-                color="Série",
-                barmode="group",
-                color_discrete_map={"Budget": "#1F4E78", "Réalisé": "#D97706"},
-            )
-            st.plotly_chart(
-                styler_graphe(
-                    fig_comp,
-                    f"Comparaison Budget ({annee_dispatch}) vs Réalisé par Mois",
-                    "Volume (hl)",
-                    legend_titre="Série",
-                ),
-                use_container_width=True,
-            )
+            if mode_vue_comp.startswith("Dispatch Budget Complet"):
+                fig_stack = px.bar(
+                    df_ms.sort_values(["Mois", "Segment"]),
+                    x="Mois",
+                    y="Budget",
+                    color="Segment",
+                    barmode="stack",
+                    color_discrete_map=COULEURS_SEGMENTS,
+                    category_orders={"Segment": ORDRE_SEGMENTS},
+                )
+                st.plotly_chart(
+                    styler_graphe(fig_stack, f"Dispatch Budget Complet ({annee_dispatch}) — Empilé par Segment", "Volume (hl)"),
+                    use_container_width=True,
+                )
+            elif mode_vue_comp.startswith("Budget vs Réalisé + Reste à faire"):
+                df_rea_p = df_ms[["Mois", "Segment", "Réalisé"]].copy()
+                df_rea_p["Colonne"] = "Réalisé"
+                df_rea_p = df_rea_p.rename(columns={"Réalisé": "Volume"})
 
-            tot_bud = df_comp_m["Budget"].sum()
-            tot_rea = df_comp_m["Réalisé"].sum()
-            tot_eca = tot_rea - tot_bud
-            tot_pct = (tot_eca / tot_bud * 100.0) if tot_bud > 0 else 0.0
+                df_rem_p = df_ms[["Mois", "Segment", "Reste à faire"]].copy()
+                df_rem_p["Colonne"] = "Reste à faire"
+                df_rem_p = df_rem_p.rename(columns={"Reste à faire": "Volume"})
+
+                df_bud_p = df_ms[["Mois", "Segment", "Budget"]].copy()
+                df_bud_p["Colonne"] = "Budget"
+                df_bud_p = df_bud_p.rename(columns={"Budget": "Volume"})
+
+                df_plot_3 = pd.concat([df_rea_p, df_rem_p, df_bud_p], ignore_index=True)
+                fig_stack3 = px.bar(
+                    df_plot_3,
+                    x="Colonne",
+                    y="Volume",
+                    color="Segment",
+                    facet_col="Mois",
+                    barmode="stack",
+                    color_discrete_map=COULEURS_SEGMENTS,
+                    category_orders={"Segment": ORDRE_SEGMENTS, "Mois": mois_cibles, "Colonne": ["Réalisé", "Reste à faire", "Budget"]},
+                )
+                st.plotly_chart(
+                    styler_graphe(fig_stack3, f"Budget vs Réalisé & Reste à faire ({annee_dispatch}) — Empilé par Segment", "Volume (hl)"),
+                    use_container_width=True,
+                )
+            else:
+                df_b_c = df_ms[["Mois", "Segment", "Budget"]].copy()
+                df_b_c["Type_Barre"] = "Budget"
+                df_b_c = df_b_c.rename(columns={"Budget": "Volume"})
+
+                df_r_c = df_ms[["Mois", "Segment", "Réalisé"]].copy()
+                df_r_c["Type_Barre"] = "Réalisé"
+                df_r_c = df_r_c.rename(columns={"Réalisé": "Volume"})
+
+                df_plot_2 = pd.concat([df_b_c, df_r_c], ignore_index=True)
+                fig_stack2 = px.bar(
+                    df_plot_2,
+                    x="Type_Barre",
+                    y="Volume",
+                    color="Segment",
+                    facet_col="Mois",
+                    barmode="stack",
+                    color_discrete_map=COULEURS_SEGMENTS,
+                    category_orders={"Segment": ORDRE_SEGMENTS, "Mois": mois_cibles, "Type_Barre": ["Budget", "Réalisé"]},
+                )
+                st.plotly_chart(
+                    styler_graphe(fig_stack2, f"Comparaison Budget ({annee_dispatch}) vs Réalisé — Empilé par Segment", "Volume (hl)"),
+                    use_container_width=True,
+                )
+
+            # Synthèse mensuelle (Budget, Réalisé, Reste à faire, % Réalisé)
+            df_sum_m = (
+                df_ms.groupby("Mois", as_index=False)[["Budget", "Réalisé", "Reste à faire", "Écart (hl)"]]
+                .sum()
+            )
+            df_sum_m["% Réalisé"] = np.where(df_sum_m["Budget"] > 0, (df_sum_m["Réalisé"] / df_sum_m["Budget"]) * 100.0, 0.0)
+
+            tot_b = df_sum_m["Budget"].sum()
+            tot_r = df_sum_m["Réalisé"].sum()
+            tot_rem = max(tot_b - tot_r, 0.0)
+            tot_pct_r = (tot_r / tot_b * 100.0) if tot_b > 0 else 0.0
 
             k1, k2, k3, k4 = st.columns(4)
-            k1.metric(f"Budget ({annee_dispatch})", fmt_val(tot_bud))
-            k2.metric("Réalisé", fmt_val(tot_rea))
-            k3.metric("Écart (hl)", f"{tot_eca:+,.0f}".replace(",", " "))
-            k4.metric("Écart (%)", f"{tot_pct:+.1f}%")
+            k1.metric(f"Budget ({annee_dispatch})", fmt_val(tot_b))
+            k2.metric("Réalisé", fmt_val(tot_r), f"{tot_pct_r:.1f}% du budget")
+            k3.metric("Reste à faire", fmt_val(tot_rem))
+            k4.metric("Écart net (hl)", f"{(tot_r - tot_b):+,.0f}".replace(",", " "))
 
-            df_comp_show = df_comp_m.copy()
-            df_comp_show.loc[len(df_comp_show)] = {
+            df_sum_show = df_sum_m.copy()
+            df_sum_show.loc[len(df_sum_show)] = {
                 "Mois": "TOTAL",
-                "Budget": tot_bud,
-                "Réalisé": tot_rea,
-                "Écart (hl)": tot_eca,
-                "Écart (%)": tot_pct,
+                "Budget": tot_b,
+                "Réalisé": tot_r,
+                "Reste à faire": tot_rem,
+                "Écart (hl)": tot_r - tot_b,
+                "% Réalisé": tot_pct_r,
             }
             st.dataframe(
-                df_comp_show.style.format({
+                df_sum_show.style.format({
                     "Budget": "{:,.0f}",
                     "Réalisé": "{:,.0f}",
+                    "Reste à faire": "{:,.0f}",
                     "Écart (hl)": "{:+,.0f}",
-                    "Écart (%)": "{:+.1f}%",
+                    "% Réalisé": "{:.1f}%",
                 }),
                 use_container_width=True,
                 hide_index=True,
             )
+
+            with st.expander("📋 Détail par Mois et par Segment (Budget, Réalisé, Reste à faire)", expanded=False):
+                st.dataframe(
+                    df_ms[["Mois", "Segment", "Budget", "Réalisé", "Reste à faire", "Écart (hl)"]].style.format({
+                        "Budget": "{:,.0f}",
+                        "Réalisé": "{:,.0f}",
+                        "Reste à faire": "{:,.0f}",
+                        "Écart (hl)": "{:+,.0f}",
+                    }),
+                    use_container_width=True,
+                    hide_index=True,
+                )
         else:
             fig_disp_mois = px.bar(
                 df_disp_annee.groupby(["Mois", "Segment"], as_index=False)["Volume_Dispatch"].sum().sort_values("Mois"),
