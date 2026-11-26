@@ -242,7 +242,6 @@ def charger_ventes_realisees(uploaded_file):
 
     cols_lower = {str(c).strip().lower(): c for c in df_raw.columns}
 
-    # Format hiérarchique type Export ('Total genéral' = Mois année, 'Unnamed: 1' = Segments, 'Unnamed: 2' = Marque, 'Unnamed: 3' = Agences)
     if "total genéral" in cols_lower and "unnamed: 1" in cols_lower and "unnamed: 3" in cols_lower:
         c_ma = cols_lower["total genéral"]
         c_seg = cols_lower["unnamed: 1"]
@@ -272,7 +271,6 @@ def charger_ventes_realisees(uploaded_file):
 
         return df_clean.groupby(["Mois", "Segment", "Agence"], as_index=False)["Vol_Real"].sum()
 
-    # Format hiérarchique 3 niveaux sans colonne marque ('Total genéral', 'Unnamed: 1', 'Unnamed: 2')
     if "total genéral" in cols_lower and "unnamed: 1" in cols_lower and "unnamed: 2" in cols_lower:
         c_ma = cols_lower["total genéral"]
         c_seg = cols_lower["unnamed: 1"]
@@ -299,7 +297,6 @@ def charger_ventes_realisees(uploaded_file):
 
         return df_clean.groupby(["Mois", "Segment", "Agence"], as_index=False)["Vol_Real"].sum()
 
-    # Format tabulaire explicite (Mois, Segment, Agence, Volume)
     c_m = next((cols_lower[k] for k in ["mois", "mois année", "periode", "période"] if k in cols_lower), None)
     c_s = next((cols_lower[k] for k in ["segment", "segments"] if k in cols_lower), None)
     c_a = next((cols_lower[k] for k in ["agence", "agences"] if k in cols_lower), None)
@@ -497,6 +494,14 @@ def styler_graphe(fig, titre, yaxis_titre, legend_titre="Segment"):
         font=dict(family="Segoe UI, Tahoma, sans-serif", size=12),
     )
     return fig
+
+def styler_ecart_negatif(val):
+    """Met en rouge les écarts négatifs (< 0) dans la colonne Écart (hl)."""
+    if pd.notna(val) and float(val) < 0:
+        return "color: #DC2626; font-weight: bold;"
+    if pd.notna(val) and float(val) > 0:
+        return "color: #15803D; font-weight: 600;"
+    return ""
 
 def generer_html_fusionne(df_source, cols_annees, segments_cibles, afficher_evo=False):
     df_sub = df_source[df_source["Segment"].isin(segments_cibles)]
@@ -1070,7 +1075,7 @@ with onglet_agences:
 
 
 # #####################################################
-# ONGLET 4 : DISPATCH AGENCE & MOIS (UPLOAD EN HAUT + EMPILEMENT PAR SEGMENT)
+# ONGLET 4 : DISPATCH AGENCE & MOIS (UPLOAD EN HAUT + EMPILEMENT PAR SEGMENT + ÉCART (HL) EN ROUGE)
 # #####################################################
 with onglet_dispatch:
     AGENCES = st.session_state.dispatch_agences
@@ -1096,7 +1101,7 @@ with onglet_dispatch:
 
     # Upload placé en haut de la section
     uploaded_real_file = st.file_uploader(
-        "📤 Charger le fichier Excel / CSV des ventes réalisées (réalisé arrêté à un mois — Budget vs Réalisé & Reste à faire) :",
+        "📤 Charger le fichier Excel / CSV des ventes réalisées (réalisé arrêté à un mois — Budget vs Réalisé & Écart) :",
         type=["xlsx", "xls", "csv"],
         key="upload_ventes_realisees",
     )
@@ -1132,7 +1137,6 @@ with onglet_dispatch:
                 "Mode d'affichage du graphe (empilé par Segment) :",
                 options=[
                     "Comparaison Budget vs Réalisé (Mois réalisés)",
-                    "Budget vs Réalisé + Reste à faire (Mois réalisés)",
                     "Dispatch Budget Complet (12 mois)",
                 ],
                 horizontal=True,
@@ -1167,7 +1171,6 @@ with onglet_dispatch:
             )
 
             df_ms = df_grid.merge(df_b_seg, on=["Mois", "Segment"], how="left").merge(df_r_seg, on=["Mois", "Segment"], how="left").fillna(0.0)
-            df_ms["Reste à faire"] = (df_ms["Budget"] - df_ms["Réalisé"]).clip(lower=0.0)
             df_ms["Écart (hl)"] = df_ms["Réalisé"] - df_ms["Budget"]
 
             if mode_vue_comp.startswith("Dispatch Budget Complet"):
@@ -1182,34 +1185,6 @@ with onglet_dispatch:
                 )
                 st.plotly_chart(
                     styler_graphe(fig_stack, f"Dispatch Budget Complet ({annee_dispatch}) — Empilé par Segment", "Volume (hl)"),
-                    use_container_width=True,
-                )
-            elif mode_vue_comp.startswith("Budget vs Réalisé + Reste à faire"):
-                df_rea_p = df_ms[["Mois", "Segment", "Réalisé"]].copy()
-                df_rea_p["Colonne"] = "Réalisé"
-                df_rea_p = df_rea_p.rename(columns={"Réalisé": "Volume"})
-
-                df_rem_p = df_ms[["Mois", "Segment", "Reste à faire"]].copy()
-                df_rem_p["Colonne"] = "Reste à faire"
-                df_rem_p = df_rem_p.rename(columns={"Reste à faire": "Volume"})
-
-                df_bud_p = df_ms[["Mois", "Segment", "Budget"]].copy()
-                df_bud_p["Colonne"] = "Budget"
-                df_bud_p = df_bud_p.rename(columns={"Budget": "Volume"})
-
-                df_plot_3 = pd.concat([df_rea_p, df_rem_p, df_bud_p], ignore_index=True)
-                fig_stack3 = px.bar(
-                    df_plot_3,
-                    x="Colonne",
-                    y="Volume",
-                    color="Segment",
-                    facet_col="Mois",
-                    barmode="stack",
-                    color_discrete_map=COULEURS_SEGMENTS,
-                    category_orders={"Segment": ORDRE_SEGMENTS, "Mois": mois_cibles, "Colonne": ["Réalisé", "Reste à faire", "Budget"]},
-                )
-                st.plotly_chart(
-                    styler_graphe(fig_stack3, f"Budget vs Réalisé & Reste à faire ({annee_dispatch}) — Empilé par Segment", "Volume (hl)"),
                     use_container_width=True,
                 )
             else:
@@ -1237,53 +1212,52 @@ with onglet_dispatch:
                     use_container_width=True,
                 )
 
-            # Synthèse mensuelle (Budget, Réalisé, Reste à faire, % Réalisé)
             df_sum_m = (
-                df_ms.groupby("Mois", as_index=False)[["Budget", "Réalisé", "Reste à faire", "Écart (hl)"]]
+                df_ms.groupby("Mois", as_index=False)[["Budget", "Réalisé", "Écart (hl)"]]
                 .sum()
             )
             df_sum_m["% Réalisé"] = np.where(df_sum_m["Budget"] > 0, (df_sum_m["Réalisé"] / df_sum_m["Budget"]) * 100.0, 0.0)
 
             tot_b = df_sum_m["Budget"].sum()
             tot_r = df_sum_m["Réalisé"].sum()
-            tot_rem = max(tot_b - tot_r, 0.0)
+            tot_eca = tot_r - tot_b
             tot_pct_r = (tot_r / tot_b * 100.0) if tot_b > 0 else 0.0
 
-            k1, k2, k3, k4 = st.columns(4)
+            k1, k2, k3 = st.columns(3)
             k1.metric(f"Budget ({annee_dispatch})", fmt_val(tot_b))
             k2.metric("Réalisé", fmt_val(tot_r), f"{tot_pct_r:.1f}% du budget")
-            k3.metric("Reste à faire", fmt_val(tot_rem))
-            k4.metric("Écart net (hl)", f"{(tot_r - tot_b):+,.0f}".replace(",", " "))
+            k3.metric("Écart (hl)", f"{tot_eca:+,.0f}".replace(",", " "))
 
             df_sum_show = df_sum_m.copy()
             df_sum_show.loc[len(df_sum_show)] = {
                 "Mois": "TOTAL",
                 "Budget": tot_b,
                 "Réalisé": tot_r,
-                "Reste à faire": tot_rem,
-                "Écart (hl)": tot_r - tot_b,
+                "Écart (hl)": tot_eca,
                 "% Réalisé": tot_pct_r,
             }
             st.dataframe(
-                df_sum_show.style.format({
+                df_sum_show.style
+                .format({
                     "Budget": "{:,.0f}",
                     "Réalisé": "{:,.0f}",
-                    "Reste à faire": "{:,.0f}",
                     "Écart (hl)": "{:+,.0f}",
                     "% Réalisé": "{:.1f}%",
-                }),
+                })
+                .map(styler_ecart_negatif, subset=["Écart (hl)"]),
                 use_container_width=True,
                 hide_index=True,
             )
 
-            with st.expander("📋 Détail par Mois et par Segment (Budget, Réalisé, Reste à faire)", expanded=False):
+            with st.expander("📋 Détail par Mois et par Segment (Budget, Réalisé, Écart)", expanded=False):
                 st.dataframe(
-                    df_ms[["Mois", "Segment", "Budget", "Réalisé", "Reste à faire", "Écart (hl)"]].style.format({
+                    df_ms[["Mois", "Segment", "Budget", "Réalisé", "Écart (hl)"]].style
+                    .format({
                         "Budget": "{:,.0f}",
                         "Réalisé": "{:,.0f}",
-                        "Reste à faire": "{:,.0f}",
                         "Écart (hl)": "{:+,.0f}",
-                    }),
+                    })
+                    .map(styler_ecart_negatif, subset=["Écart (hl)"]),
                     use_container_width=True,
                     hide_index=True,
                 )
