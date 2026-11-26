@@ -139,43 +139,169 @@ TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
 # =====================================================
-# POIDS AGENCES & MOIS (INTÉGRÉS SANS LECTURE FICHIER)
+# CALCUL HIERARCHIQUE DES POIDS DEPUIS 'Volume' (IGNORE 'Poids')
+# Agence -> Segment -> Marque -> Article -> Mois
 # =====================================================
-POIDS_AGENCE_FIXES = {
-    "01-Tanjombato": 0.19826856758695652,
-    "11-Andranomahery": 0.18943966207826087,
-    "09-Tamatave": 0.11534420072173913,
-    "07-Majunga": 0.07513787697543478,
-    "12-Antsirabe": 0.06996317881369565,
-    "18-Ambanja": 0.050917231935,
-    "04-Tulear": 0.046908364911086955,
-    "08-Manakara": 0.04599593778717391,
-    "03-Usine-Diego": 0.039402884312826086,
-    "19-Sambava": 0.03525309595,
-    "21-Nosy-Be": 0.03247549311347826,
-    "05-Fianarantsoa": 0.031521074194565216,
-    "24-Fort-Dauphin": 0.027330349561304347,
-    "06-Ihosy": 0.021180052245217392,
-    "23-Morondava": 0.020862034816347825,
-}
+def _normaliser_seg(val):
+    s = str(val).strip()
+    return SEG_MAP_XL.get(s, SEG_MAP_XL.get(s.upper(), s))
 
-@st.cache_data
-def charger_dispatch_depuis_fichier():
-    agences_liste = list(POIDS_AGENCE_FIXES.keys())
-    tot_ag = sum(POIDS_AGENCE_FIXES.values())
-    poids_ag_norm = {ag: w / tot_ag for ag, w in POIDS_AGENCE_FIXES.items()}
+def _parse_float_vol(v):
+    if pd.isna(v):
+        return 0.0
+    if isinstance(v, str):
+        s = v.replace(" ", "").replace("\u202f", "").replace(",", ".").strip()
+        return float(s) if s != "" else 0.0
+    return float(v)
 
-    # Saisonnalité mensuelle par agence (somme = 1.0 par agence)
-    saison_base = np.array([
-        0.065398, 0.056048, 0.081488, 0.075870, 0.086150, 0.103963,
-        0.068800, 0.085406, 0.084724, 0.088832, 0.096839, 0.106482,
-    ])
-    saison_base = saison_base / saison_base.sum()
+def construire_dispatch_hierarchique_volume(df_source_vol):
+    """
+    Ignore la colonne 'Poids' et calcule la hiérarchie des poids à partir de 'Volume' :
+    Agence -> Segment (dans l'Agence) -> Marque (dans le Segment)
+    -> Article (dans la Marque) -> Mois (dans l'Article),
+    puis normalise par Article afin que la somme des parts sur (Agence, Mois) = 100 %.
+    """
+    cols_lower = {str(c).strip().lower(): c for c in df_source_vol.columns}
+    col_ag = cols_lower.get("agence")
+    col_vol = cols_lower.get("volume")
+    col_seg = cols_lower.get("segment")
+    col_marq = cols_lower.get("marque")
+    col_art = cols_lower.get("article")
+    col_mois = cols_lower.get("mois")
+
+    if col_ag is None or col_vol is None:
+        raise ValueError(f"Colonnes 'Agence' et 'Volume' requises. Trouvées : {list(df_source_vol.columns)}")
+
+    df_v = df_source_vol.copy()
+    df_v["Agence_Norm"] = df_v[col_ag].astype(str).str.strip()
+    df_v = df_v[
+        df_v[col_ag].notna()
+        & (df_v["Agence_Norm"] != "0")
+        & (df_v["Agence_Norm"] != "")
+        & (df_v["Agence_Norm"].str.lower() != "nan")
+    ].copy()
+
+    df_v["Vol_Num"] = df_v[col_vol].apply(_parse_float_vol)
+    if df_v["Vol_Num"].sum() <= 0:
+        raise ValueError("La somme des volumes est nulle.")
+
+    df_v["Mois_Norm"] = (
+        pd.to_numeric(df_v[col_mois], errors="coerce")
+        .fillna(1)
+        .astype(int)
+        .clip(1, 12)
+        .apply(lambda x: f"{x:02d}")
+        if col_mois is not None
+        else "01"
+    )
+
+    # 1. Poids par Agence
+    ag_vol = df_v.groupby("Agence_Norm", as_index=False)["Vol_Num"].sum()
+    tot_vol = ag_vol["Vol_Num"].sum()
+    ag_vol["Poids_Agence"] = ag_vol["Vol_Num"] / tot_vol
+    agences_liste = ag_vol.sort_values("Poids_Agence", ascending=False)["Agence_Norm"].tolist()
+
+    # 2. Poids du Segment dans l'Agence
+    df_v["Seg_Norm"] = df_v[col_seg].apply(_normaliser_seg) if col_seg is not None else "Global"
+    ag_seg = df_v.groupby(["Agence_Norm", "Seg_Norm"], as_index=False)["Vol_Num"].sum()
+    ag_seg_tot = ag_seg.groupby("Agence_Norm")["Vol_Num"].transform("sum")
+    ag_seg["Poids_Seg_Dans_Ag"] = np.where(ag_seg_tot > 0, ag_seg["Vol_Num"] / ag_seg_tot, 0.0)
+
+    # 3. Poids de la Marque dans (Agence, Segment)
+    df_v["Marque_Norm"] = df_v[col_marq].astype(str).str.strip() if col_marq is not None else "Global"
+    ag_sm = df_v.groupby(["Agence_Norm", "Seg_Norm", "Marque_Norm"], as_index=False)["Vol_Num"].sum()
+    ag_sm_tot = ag_sm.groupby(["Agence_Norm", "Seg_Norm"])["Vol_Num"].transform("sum")
+    ag_sm["Poids_Marque_Dans_Ag_Seg"] = np.where(ag_sm_tot > 0, ag_sm["Vol_Num"] / ag_sm_tot, 0.0)
+
+    # 4. Poids de l'Article dans (Agence, Segment, Marque)
+    df_v["Article_Norm"] = df_v[col_art].astype(str).str.strip() if col_art is not None else "Global"
+    ag_sma = df_v.groupby(["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm"], as_index=False)["Vol_Num"].sum()
+    ag_sma_tot = ag_sma.groupby(["Agence_Norm", "Seg_Norm", "Marque_Norm"])["Vol_Num"].transform("sum")
+    ag_sma["Poids_Art_Dans_Ag_SM"] = np.where(ag_sma_tot > 0, ag_sma["Vol_Num"] / ag_sma_tot, 0.0)
+
+    # 5. Poids du Mois dans (Agence, Segment, Marque, Article)
+    ag_smam = df_v.groupby(["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm", "Mois_Norm"], as_index=False)["Vol_Num"].sum()
+    ag_smam_tot = ag_smam.groupby(["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm"])["Vol_Num"].transform("sum")
+    ag_smam["Poids_Mois_Dans_Ag_SMA"] = np.where(ag_smam_tot > 0, ag_smam["Vol_Num"] / ag_smam_tot, 1.0 / 12.0)
+
+    hier = (
+        ag_smam[["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm", "Mois_Norm", "Poids_Mois_Dans_Ag_SMA"]]
+        .merge(ag_sma[["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm", "Poids_Art_Dans_Ag_SM"]], on=["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm"], how="left")
+        .merge(ag_sm[["Agence_Norm", "Seg_Norm", "Marque_Norm", "Poids_Marque_Dans_Ag_Seg"]], on=["Agence_Norm", "Seg_Norm", "Marque_Norm"], how="left")
+        .merge(ag_seg[["Agence_Norm", "Seg_Norm", "Poids_Seg_Dans_Ag"]], on=["Agence_Norm", "Seg_Norm"], how="left")
+        .merge(ag_vol[["Agence_Norm", "Poids_Agence"]], on="Agence_Norm", how="left")
+    )
+    hier["Poids_Hierarchique"] = (
+        hier["Poids_Agence"]
+        * hier["Poids_Seg_Dans_Ag"]
+        * hier["Poids_Marque_Dans_Ag_Seg"]
+        * hier["Poids_Art_Dans_Ag_SM"]
+        * hier["Poids_Mois_Dans_Ag_SMA"]
+    )
+
+    tot_art = hier.groupby("Article_Norm")["Poids_Hierarchique"].transform("sum")
+    hier["Part_Article_AM"] = np.where(tot_art > 0, hier["Poids_Hierarchique"] / tot_art, 0.0)
+
+    poids_sku_am_map = {
+        (r["Article_Norm"], r["Agence_Norm"], r["Mois_Norm"]): float(r["Part_Article_AM"])
+        for _, r in hier.iterrows()
+    }
+    poids_ag_fallback = dict(zip(ag_vol["Agence_Norm"], ag_vol["Poids_Agence"]))
 
     rows_final = []
     for _, r in df_base.iterrows():
+        seg, marq, art = r["Segment"], r["Marque"], r["SKU"]
+        has_sku = any((art, ag, m) in poids_sku_am_map and poids_sku_am_map[(art, ag, m)] > 0 for ag in agences_liste for m in MOIS)
         for ag in agences_liste:
-            p_ag = poids_ag_norm[ag]
+            for m in MOIS:
+                if has_sku:
+                    w = poids_sku_am_map.get((art, ag, m), 0.0)
+                else:
+                    w = poids_ag_fallback.get(ag, 0.0) / len(MOIS)
+                rows_final.append({
+                    "Segment": seg,
+                    "Marque": marq,
+                    "Article": art,
+                    "Agence": ag,
+                    "Mois": m,
+                    "Poids_Dispatch": w,
+                })
+
+    return agences_liste, pd.DataFrame(rows_final)
+
+def dispatch_par_defaut():
+    candidats = ["Vol par AG_5.xlsx", "Vol par AG_4.xlsx", "Vol par AG_3.xlsx", "Vol par AG.xlsx"]
+    for fn in candidats:
+        if os.path.exists(fn):
+            try:
+                xls = pd.ExcelFile(fn)
+                feuille = "Feuil2" if "Feuil2" in xls.sheet_names else xls.sheet_names[0]
+                df_xl = pd.read_excel(fn, sheet_name=feuille)
+                ag_l, df_d = construire_dispatch_hierarchique_volume(df_xl)
+                return ag_l, df_d, f"Fichier local : {fn} (hiérarchie sur 'Volume')"
+            except Exception:
+                pass
+
+    # Repli hiérarchique intégré si aucun fichier Excel n'est présent sur le disque
+    poids_ag_init = {
+        "01-Tanjombato": 0.198268571932, "11-Andranomahery": 0.189439662078,
+        "09-Tamatave": 0.115344200722, "07-Majunga": 0.075137876975,
+        "12-Antsirabe": 0.069963178814, "18-Ambanja": 0.050917231935,
+        "04-Tulear": 0.046908364911, "08-Manakara": 0.045995937787,
+        "03-Usine-Diego": 0.039402884313, "19-Sambava": 0.035253095950,
+        "21-Nosy-Be": 0.032475493113, "05-Fianarantsoa": 0.031521074195,
+        "24-Fort-Dauphin": 0.027330349561, "06-Ihosy": 0.021180052245,
+        "23-Morondava": 0.020862025468,
+    }
+    saison_init = np.array([
+        0.065398, 0.056048, 0.081488, 0.075870, 0.086150, 0.103963,
+        0.068800, 0.085406, 0.084724, 0.088832, 0.096839, 0.106482,
+    ])
+    saison_init = saison_init / saison_init.sum()
+    agences_liste = list(poids_ag_init.keys())
+    rows_final = []
+    for _, r in df_base.iterrows():
+        for ag in agences_liste:
             for idx_m, m in enumerate(MOIS):
                 rows_final.append({
                     "Segment": r["Segment"],
@@ -183,12 +309,30 @@ def charger_dispatch_depuis_fichier():
                     "Article": r["SKU"],
                     "Agence": ag,
                     "Mois": m,
-                    "Poids_Dispatch": p_ag * float(saison_base[idx_m]),
+                    "Poids_Dispatch": poids_ag_init[ag] * float(saison_init[idx_m]),
                 })
+    return agences_liste, pd.DataFrame(rows_final), "Poids intégrés par défaut"
 
-    return agences_liste, pd.DataFrame(rows_final)
+def parser_fichier_volumes_dispatch(uploaded_file):
+    if uploaded_file.name.lower().endswith(".csv"):
+        try:
+            df_xl = pd.read_csv(uploaded_file, sep=None, engine="python")
+        except Exception:
+            uploaded_file.seek(0)
+            df_xl = pd.read_csv(uploaded_file, sep=";")
+    else:
+        xls = pd.ExcelFile(uploaded_file)
+        feuille_cible = "Feuil2" if "Feuil2" in xls.sheet_names else xls.sheet_names[0]
+        df_xl = pd.read_excel(uploaded_file, sheet_name=feuille_cible)
 
-AGENCES, df_dispatch_base = charger_dispatch_depuis_fichier()
+    ag_l, df_d = construire_dispatch_hierarchique_volume(df_xl)
+    return ag_l, df_d, f"Fichier importé : {uploaded_file.name} (hiérarchie sur 'Volume')"
+
+if "dispatch_agences" not in st.session_state or "dispatch_df" not in st.session_state:
+    ag_init, df_init, lbl_init = dispatch_par_defaut()
+    st.session_state.dispatch_agences = ag_init
+    st.session_state.dispatch_df = df_init
+    st.session_state.source_poids_label = lbl_init
 
 # =====================================================
 # INITIALISATION DES SESSION STATES
@@ -407,8 +551,9 @@ with onglet_vol:
     st.divider()
     st.subheader("3️⃣ Paramétrage des Poids : Marques & Articles (%)")
     if st.button("🔄 Réinitialiser tous les poids (Base 2027)"):
-        del st.session_state["poids_marques"]
-        del st.session_state["poids_skus"]
+        for k in ["poids_marques", "poids_skus", "dispatch_agences", "dispatch_df", "source_poids_label"]:
+            if k in st.session_state:
+                del st.session_state[k]
         st.rerun()
 
     tab_pm, tab_ps = st.tabs(["🏷️ Poids des Marques", "📦 Poids des Articles (SKU)"])
@@ -769,7 +914,40 @@ with onglet_ca:
 # ONGLET 3 : VOLUME PAR AGENCE (FILTRES INTERACTIFS)
 # #####################################################
 with onglet_agences:
+    AGENCES = st.session_state.dispatch_agences
+    df_dispatch_base = st.session_state.dispatch_df
+
     st.subheader(f"📍 Volumes par Agence & par Mois ({len(AGENCES)} Agences)")
+    st.caption(f"Source active : **{st.session_state.source_poids_label}**")
+
+    with st.expander("📤 Importer / Changer le fichier de Volumes (.xlsx ou .csv) — Calcul hiérarchique sur 'Volume'", expanded=False):
+        col_wp1, col_wp2 = st.columns([3, 1])
+        with col_wp1:
+            uploaded_poids_file = st.file_uploader(
+                "Charger un fichier (.xlsx ou .csv) contenant 'Agence', 'Volume', ('Segment', 'Marque', 'Article', 'Mois')",
+                type=["xlsx", "xls", "csv"],
+                key="upload_poids_agences_file",
+            )
+        with col_wp2:
+            st.write("")
+            if st.button("↩️ Poids par défaut", key="btn_reset_poids_ag"):
+                ag_def, df_def, lbl_def = dispatch_par_defaut()
+                st.session_state.dispatch_agences = ag_def
+                st.session_state.dispatch_df = df_def
+                st.session_state.source_poids_label = lbl_def
+                st.rerun()
+
+        if uploaded_poids_file is not None:
+            try:
+                ag_up, df_up_disp, lbl_up = parser_fichier_volumes_dispatch(uploaded_poids_file)
+                st.session_state.dispatch_agences = ag_up
+                st.session_state.dispatch_df = df_up_disp
+                st.session_state.source_poids_label = lbl_up
+                AGENCES = ag_up
+                df_dispatch_base = df_up_disp
+                st.success(f"✅ Répartition mise à jour depuis **{uploaded_poids_file.name}** ({len(ag_up)} agences).")
+            except Exception as e:
+                st.error(f"❌ Erreur lors du chargement du fichier : {e}")
 
     col_ag1, col_ag2, col_ag3 = st.columns(3)
     with col_ag1:
@@ -809,8 +987,11 @@ with onglet_agences:
 # ONGLET 4 : DISPATCH AGENCE & MOIS (EXPORT)
 # #####################################################
 with onglet_dispatch:
+    AGENCES = st.session_state.dispatch_agences
+    df_dispatch_base = st.session_state.dispatch_df
+
     st.subheader("🚚 Dispatch Détaillé (Agence & Mois)")
-    st.caption("Ce tableau détaille la répartition mensuelle et géographique du volume pour l'année sélectionnée, avec possibilité d'exporter les données.")
+    st.caption(f"Source active : **{st.session_state.source_poids_label}** — Répartition mensuelle et géographique pour l'année sélectionnée.")
 
     col_d1, col_d2, col_d3, col_d4 = st.columns(4)
     with col_d1:
