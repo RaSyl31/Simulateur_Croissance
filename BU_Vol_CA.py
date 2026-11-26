@@ -139,10 +139,10 @@ TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
 # =====================================================
-# LOGIQUE TCD EXCEL : PART DE CHAQUE ARTICLE PAR (AGENCE, MOIS)
-# A PARTIR DE LA COLONNE 'Volume'
+# CHARGEMENT DIRECT DEPUIS LE FICHIER EXCEL JOINT
+# (Colonnes mensuelles 1..12 par Article et Agence)
 # =====================================================
-def _to_float_vol(v):
+def _to_float(v):
     if pd.isna(v):
         return 0.0
     if isinstance(v, str):
@@ -150,106 +150,82 @@ def _to_float_vol(v):
         return float(s) if s != "" else 0.0
     return float(v)
 
-def construire_dispatch_tcd_excel(df_source_vol):
-    """
-    Reproduit le raisonnement du TCD Excel :
-    pour chaque Article, calcule sa part sur chaque (Agence, Mois)
-    à partir de la colonne 'Volume' du fichier.
-    """
-    cols_lower = {str(c).strip().lower(): c for c in df_source_vol.columns}
-    col_art = cols_lower.get("article")
-    col_ag = cols_lower.get("agence")
-    col_vol = cols_lower.get("volume")
-    col_mois = cols_lower.get("mois")
+def construire_dispatch_depuis_excel_pj():
+    candidats = ["Vol par AG_6.xlsx", "Vol par AG_5.xlsx", "Vol par AG_4.xlsx", "Vol par AG_3.xlsx", "Vol par AG.xlsx"]
+    fichier_trouve = next((fn for fn in candidats if os.path.exists(fn)), None)
 
-    if col_art is None or col_ag is None or col_vol is None:
-        raise ValueError(f"Colonnes 'Article', 'Agence' et 'Volume' requises. Trouvées : {list(df_source_vol.columns)}")
+    if fichier_trouve is not None:
+        xls = pd.ExcelFile(fichier_trouve)
+        feuille = "Feuil2" if "Feuil2" in xls.sheet_names else xls.sheet_names[0]
+        df_xl = pd.read_excel(fichier_trouve, sheet_name=feuille)
 
-    df_v = df_source_vol.copy()
-    df_v["Article_Norm"] = df_v[col_art].astype(str).str.strip()
-    df_v["Agence_Norm"] = df_v[col_ag].astype(str).str.strip()
-    df_v = df_v[
-        (df_v["Article_Norm"] != "")
-        & (df_v["Article_Norm"].str.lower() != "nan")
-        & df_v[col_ag].notna()
-        & (df_v["Agence_Norm"] != "0")
-        & (df_v["Agence_Norm"] != "")
-        & (df_v["Agence_Norm"].str.lower() != "nan")
-    ].copy()
+        # Conserver uniquement les lignes d'agences valides (contenant '-')
+        df_v = df_xl[
+            df_xl["Agence"].notna()
+            & df_xl["Agence"].astype(str).str.contains("-", na=False)
+        ].copy()
 
-    df_v["Vol_Num"] = df_v[col_vol].apply(_to_float_vol)
-    if df_v["Vol_Num"].sum() <= 0:
-        raise ValueError("La somme des volumes est nulle.")
+        df_v["Article_Norm"] = df_v["Article"].astype(str).str.strip()
+        df_v["Agence_Norm"] = df_v["Agence"].astype(str).str.strip()
 
-    df_v["Mois_Norm"] = (
-        pd.to_numeric(df_v[col_mois], errors="coerce")
-        .fillna(1)
-        .astype(int)
-        .clip(1, 12)
-        .apply(lambda x: f"{x:02d}")
-        if col_mois is not None
-        else "01"
-    )
+        mois_cols_raw = [c for c in [str(m) for m in range(1, 13)] if c in df_v.columns]
+        if mois_cols_raw:
+            for c in mois_cols_raw:
+                df_v[c] = df_v[c].apply(_to_float)
+            df_long = df_v.melt(
+                id_vars=["Article_Norm", "Agence_Norm"],
+                value_vars=mois_cols_raw,
+                var_name="Mois_Raw",
+                value_name="Vol_Mois",
+            )
+            df_long["Mois"] = df_long["Mois_Raw"].astype(int).apply(lambda x: f"{x:02d}")
+            df_long = df_long.groupby(["Article_Norm", "Agence_Norm", "Mois"], as_index=False)["Vol_Mois"].sum()
+        else:
+            df_v["Vol_Num"] = df_v["Volume"].apply(_to_float)
+            df_v["Mois"] = pd.to_numeric(df_v["Mois"], errors="coerce").fillna(1).astype(int).clip(1, 12).apply(lambda x: f"{x:02d}")
+            df_long = df_v.groupby(["Article_Norm", "Agence_Norm", "Mois"], as_index=False)["Vol_Num"].sum().rename(columns={"Vol_Num": "Vol_Mois"})
 
-    art_tot = (
-        df_v.groupby("Article_Norm", as_index=False)["Vol_Num"]
-        .sum()
-        .rename(columns={"Vol_Num": "Vol_Article_Total"})
-    )
+        art_tot = df_long.groupby("Article_Norm", as_index=False)["Vol_Mois"].sum().rename(columns={"Vol_Mois": "Vol_Article_Total"})
+        df_long = df_long.merge(art_tot, on="Article_Norm", how="left")
+        df_long["Part_Article_AM"] = np.where(
+            df_long["Vol_Article_Total"] > 0,
+            df_long["Vol_Mois"] / df_long["Vol_Article_Total"],
+            0.0,
+        )
 
-    art_am = df_v.groupby(["Article_Norm", "Agence_Norm", "Mois_Norm"], as_index=False)["Vol_Num"].sum()
-    art_am = art_am.merge(art_tot, on="Article_Norm", how="left")
-    art_am["Part_Article_AM"] = np.where(
-        art_am["Vol_Article_Total"] > 0,
-        art_am["Vol_Num"] / art_am["Vol_Article_Total"],
-        0.0,
-    )
+        ag_ordre = (
+            df_long.groupby("Agence_Norm", as_index=False)["Vol_Mois"]
+            .sum()
+            .sort_values("Vol_Mois", ascending=False)["Agence_Norm"]
+            .tolist()
+        )
 
-    ag_ordre = (
-        df_v.groupby("Agence_Norm", as_index=False)["Vol_Num"]
-        .sum()
-        .sort_values("Vol_Num", ascending=False)["Agence_Norm"]
-        .tolist()
-    )
+        part_map = {
+            (r["Article_Norm"], r["Agence_Norm"], r["Mois"]): float(r["Part_Article_AM"])
+            for _, r in df_long.iterrows()
+        }
+        ag_glob = df_long.groupby("Agence_Norm")["Vol_Mois"].sum()
+        ag_glob_map = (ag_glob / ag_glob.sum()).to_dict() if ag_glob.sum() > 0 else {}
 
-    part_map = {
-        (r["Article_Norm"], r["Agence_Norm"], r["Mois_Norm"]): float(r["Part_Article_AM"])
-        for _, r in art_am.iterrows()
-    }
+        rows_final = []
+        for _, r in df_base.iterrows():
+            seg, marq, art = r["Segment"], r["Marque"], r["SKU"]
+            tot_art_part = sum(part_map.get((art, ag, m), 0.0) for ag in ag_ordre for m in MOIS)
+            for ag in ag_ordre:
+                for m in MOIS:
+                    w = part_map.get((art, ag, m), 0.0) if tot_art_part > 0 else ag_glob_map.get(ag, 0.0) / len(MOIS)
+                    rows_final.append({
+                        "Segment": seg,
+                        "Marque": marq,
+                        "Article": art,
+                        "Agence": ag,
+                        "Mois": m,
+                        "Poids_Dispatch": w,
+                    })
 
-    ag_glob = df_v.groupby("Agence_Norm")["Vol_Num"].sum()
-    ag_glob_map = (ag_glob / ag_glob.sum()).to_dict()
+        return ag_ordre, pd.DataFrame(rows_final), f"Fichier Excel : {fichier_trouve}"
 
-    rows_final = []
-    for _, r in df_base.iterrows():
-        seg, marq, art = r["Segment"], r["Marque"], r["SKU"]
-        tot_art_part = sum(part_map.get((art, ag, m), 0.0) for ag in ag_ordre for m in MOIS)
-        for ag in ag_ordre:
-            for m in MOIS:
-                w = part_map.get((art, ag, m), 0.0) if tot_art_part > 0 else ag_glob_map.get(ag, 0.0) / len(MOIS)
-                rows_final.append({
-                    "Segment": seg,
-                    "Marque": marq,
-                    "Article": art,
-                    "Agence": ag,
-                    "Mois": m,
-                    "Poids_Dispatch": w,
-                })
-
-    return ag_ordre, pd.DataFrame(rows_final)
-
-def dispatch_par_defaut():
-    for fn in ["Vol par AG_5.xlsx", "Vol par AG_4.xlsx", "Vol par AG_3.xlsx", "Vol par AG.xlsx"]:
-        if os.path.exists(fn):
-            try:
-                xls = pd.ExcelFile(fn)
-                feuille = "Feuil2" if "Feuil2" in xls.sheet_names else xls.sheet_names[0]
-                df_xl = pd.read_excel(fn, sheet_name=feuille)
-                ag_l, df_d = construire_dispatch_tcd_excel(df_xl)
-                return ag_l, df_d, f"Fichier local : {fn} (TCD Article × Agence × Mois sur Volume)"
-            except Exception:
-                pass
-
+    # Repli intégré si aucun fichier n'est présent sur le disque
     poids_ag_init = {
         "01-Tanjombato": 0.198268571932, "11-Andranomahery": 0.189439662078,
         "09-Tamatave": 0.115344200722, "07-Majunga": 0.075137876975,
@@ -280,23 +256,8 @@ def dispatch_par_defaut():
                 })
     return agences_liste, pd.DataFrame(rows_final), "Poids intégrés par défaut"
 
-def parser_fichier_poids(uploaded_file):
-    if uploaded_file.name.lower().endswith(".csv"):
-        try:
-            df_xl = pd.read_csv(uploaded_file, sep=None, engine="python")
-        except Exception:
-            uploaded_file.seek(0)
-            df_xl = pd.read_csv(uploaded_file, sep=";")
-    else:
-        xls = pd.ExcelFile(uploaded_file)
-        feuille_cible = "Feuil2" if "Feuil2" in xls.sheet_names else xls.sheet_names[0]
-        df_xl = pd.read_excel(uploaded_file, sheet_name=feuille_cible)
-
-    ag_l, df_d = construire_dispatch_tcd_excel(df_xl)
-    return ag_l, df_d, f"Fichier importé : {uploaded_file.name} (TCD Article × Agence × Mois sur Volume)"
-
 if "dispatch_agences" not in st.session_state or "dispatch_df" not in st.session_state:
-    ag_init, df_init, lbl_init = dispatch_par_defaut()
+    ag_init, df_init, lbl_init = construire_dispatch_depuis_excel_pj()
     st.session_state.dispatch_agences = ag_init
     st.session_state.dispatch_df = df_init
     st.session_state.source_poids_label = lbl_init
@@ -887,35 +848,6 @@ with onglet_agences:
     st.subheader(f"📍 Volumes par Agence & par Mois ({len(AGENCES)} Agences)")
     st.caption(f"Source active : **{st.session_state.source_poids_label}**")
 
-    with st.expander("📤 Importer / Changer le fichier de Volumes (.xlsx ou .csv) — Logique TCD sur 'Volume'", expanded=False):
-        col_wp1, col_wp2 = st.columns([3, 1])
-        with col_wp1:
-            uploaded_poids_file = st.file_uploader(
-                "Charger un fichier (.xlsx ou .csv) contenant 'Article', 'Agence', 'Volume', 'Mois'",
-                type=["xlsx", "xls", "csv"],
-                key="upload_poids_agences_file",
-            )
-        with col_wp2:
-            st.write("")
-            if st.button("↩️ Poids par défaut", key="btn_reset_poids_ag"):
-                ag_def, df_def, lbl_def = dispatch_par_defaut()
-                st.session_state.dispatch_agences = ag_def
-                st.session_state.dispatch_df = df_def
-                st.session_state.source_poids_label = lbl_def
-                st.rerun()
-
-        if uploaded_poids_file is not None:
-            try:
-                ag_up, df_up_disp, lbl_up = parser_fichier_poids(uploaded_poids_file)
-                st.session_state.dispatch_agences = ag_up
-                st.session_state.dispatch_df = df_up_disp
-                st.session_state.source_poids_label = lbl_up
-                AGENCES = ag_up
-                df_dispatch_base = df_up_disp
-                st.success(f"✅ Répartition mise à jour depuis **{uploaded_poids_file.name}** ({len(ag_up)} agences).")
-            except Exception as e:
-                st.error(f"❌ Erreur lors du chargement du fichier : {e}")
-
     col_ag1, col_ag2, col_ag3 = st.columns(3)
     with col_ag1:
         annee_agence = st.selectbox("Sélectionnez l'Année :", ANNEES, index=0, key="ag_annee")
@@ -951,14 +883,14 @@ with onglet_agences:
 
 
 # #####################################################
-# ONGLET 4 : DISPATCH AGENCE & MOIS (EXPORT)
+# ONGLET 4 : DISPATCH AGENCE & MOIS (EXPORT GLOBAL)
 # #####################################################
 with onglet_dispatch:
     AGENCES = st.session_state.dispatch_agences
     df_dispatch_base = st.session_state.dispatch_df
 
     st.subheader("🚚 Dispatch Détaillé (Agence & Mois)")
-    st.caption(f"Source active : **{st.session_state.source_poids_label}** — Répartition mensuelle et géographique pour l'année sélectionnée.")
+    st.caption(f"Source active : **{st.session_state.source_poids_label}** — Répartition mensuelle et géographique.")
 
     col_d1, col_d2, col_d3, col_d4 = st.columns(4)
     with col_d1:
@@ -1010,32 +942,49 @@ with onglet_dispatch:
         st.dataframe(styler_pivot_dispatch(df_pivot_wide), use_container_width=True)
 
         st.markdown("---")
-        st.subheader("📥 Télécharger le Dispatch")
+        st.subheader("📥 Téléchargement Global (Toutes années 2027–2031 + Synthèse Mensuelle)")
 
-        df_export = df_disp_annee.copy()
-        df_export["Année"] = annee_dispatch
-        df_export["Ag"] = df_export["Agence"].str.extract(r'^(\d+)').astype(int)
-        df_export["Attribut"] = df_export["Mois"] + " Hecto"
-        df_export["Valeur"] = df_export["Volume_Dispatch"]
-        df_export["Col/Hl"] = "Hecto"
-        df_export["Mois_Num"] = df_export["Mois"]
+        # Construction de la table globale sur toutes les années 2027..2031
+        frames_glob = []
+        for a_item in ANNEES:
+            df_a = df_dispatch_base.copy()
+            df_a = df_a.merge(df_detail[["Segment", "Marque", "SKU", a_item]], left_on=["Segment", "Marque", "Article"], right_on=["Segment", "Marque", "SKU"], how="left")
+            df_a = df_a.rename(columns={a_item: "Volume_Annuel"}).drop(columns=["SKU"])
+            df_a["Valeur"] = df_a["Volume_Annuel"] * df_a["Poids_Dispatch"]
+            df_a["Année"] = a_item
+            df_a["AG"] = df_a["Agence"].str.extract(r'^(\d+)').fillna(0).astype(int)
+            df_a["Attribut"] = df_a["Mois"] + " Hecto"
+            df_a["Col/Hl"] = "Hecto"
+            frames_glob.append(df_a[["Année", "Segment", "Marque", "Article", "Agence", "AG", "Attribut", "Valeur", "Col/Hl", "Mois"]])
 
-        df_export = df_export[["Année", "Segment", "Marque", "Article", "Agence", "Ag", "Attribut", "Valeur", "Col/Hl", "Mois_Num"]]
-        df_export.columns = ["Année", "Segment", "Marque", "Article", "Agence", "AG", "Attribut", "Valeur", "Col/Hl", "Mois"]
+        df_export_global = pd.concat(frames_glob, ignore_index=True)
 
-        buffer_disp = io.BytesIO()
-        with pd.ExcelWriter(buffer_disp, engine="openpyxl") as writer_disp:
-            df_export.to_excel(writer_disp, sheet_name=f"Dispatch_{annee_dispatch}", index=False)
-            ws = writer_disp.sheets[f"Dispatch_{annee_dispatch}"]
-            for col in ws.columns:
-                max_length = max([len(str(cell.value)) for cell in col])
-                ws.column_dimensions[col[0].column_letter].width = max(max_length + 2, 12)
+        # Synthèse mensuelle 2027 par Segment (format Image 01)
+        df_2027_seg = (
+            df_export_global[df_export_global["Année"] == "2027"]
+            .groupby(["Segment", "Mois"], as_index=False)["Valeur"]
+            .sum()
+            .pivot(index="Segment", columns="Mois", values="Valeur")
+            .reindex(index=ORDRE_SEGMENTS, columns=MOIS, fill_value=0.0)
+            .fillna(0.0)
+        )
+        df_2027_seg["Total 2027"] = df_2027_seg.sum(axis=1)
+        df_2027_seg.loc["TOTAL 2027"] = df_2027_seg.sum(axis=0)
 
-        buffer_disp.seek(0)
+        buffer_global = io.BytesIO()
+        with pd.ExcelWriter(buffer_global, engine="openpyxl") as writer_glob:
+            df_export_global.to_excel(writer_glob, sheet_name="Dispatch_Global_2027_2031", index=False)
+            df_2027_seg.to_excel(writer_glob, sheet_name="Synthese_Mensuelle_2027", index=True)
+            for ws_name, ws in writer_glob.sheets.items():
+                for col in ws.columns:
+                    max_len = max((len(str(cell.value)) for cell in col if cell.value is not None), default=10)
+                    ws.column_dimensions[col[0].column_letter].width = max(max_len + 2, 12)
+
+        buffer_global.seek(0)
         st.download_button(
-            label="📥 Télécharger le Fichier de Dispatch (Excel)",
-            data=buffer_disp,
-            file_name=f"Dispatch_Volumes_{annee_dispatch}.xlsx",
+            label="📥 Télécharger le Fichier Global (Dispatch 2027–2031 + Synthèse 2027)",
+            data=buffer_global,
+            file_name="Dispatch_Global_2027_2031.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary"
+            type="primary",
         )
