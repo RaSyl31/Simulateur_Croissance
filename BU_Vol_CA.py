@@ -152,7 +152,7 @@ TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
 # =====================================================
-# CALCUL DES POIDS DEPUIS 'Disp par AG.xlsx'
+# DISPATCH PAR AGENCE & SAISONNALITÉ MENSUELLE (TOTAL R0 2027)
 # =====================================================
 def _to_float(v):
     if pd.isna(v):
@@ -176,6 +176,7 @@ def _detecter_colonnes_mois(columns):
 
 def construire_dispatch_depuis_excel():
     candidats = [
+        "Disp par AG_2.xlsx",
         "Disp par AG.xlsx",
         "Vol par AG_7.xlsx",
         "Vol par AG_6.xlsx",
@@ -195,7 +196,7 @@ def construire_dispatch_depuis_excel():
         col_art = cols_lower.get("article")
         col_ag = cols_lower.get("agence")
         if col_art is None or col_ag is None:
-            raise ValueError(f"Colonnes 'Article' et 'Agence' requises dans {fichier_trouve}. Trouvées : {list(df_xl.columns)}")
+            raise ValueError(f"Colonnes 'Article' et 'Agence' requises dans {fichier_trouve}.")
 
         df_v = df_xl[
             df_xl[col_ag].notna()
@@ -227,59 +228,57 @@ def construire_dispatch_depuis_excel():
         else:
             raise ValueError(f"Aucune colonne mensuelle détectée dans {fichier_trouve}.")
 
-        art_tot = df_long.groupby("Article_Norm", as_index=False)["Vol_Mois"].sum().rename(columns={"Vol_Mois": "Vol_Article_Total"})
-        df_long = df_long.merge(art_tot, on="Article_Norm", how="left")
-        df_long["Part_Article_AM"] = np.where(
-            df_long["Vol_Article_Total"] > 0,
-            df_long["Vol_Mois"] / df_long["Vol_Article_Total"],
-            0.0,
-        )
+        # Poids mensuel global issu des colonnes mensuelles du fichier (restitue TOTAL R0 2027)
+        s_mois = df_long.groupby("Mois")["Vol_Mois"].sum().reindex(MOIS).fillna(0.0)
+        poids_mois_map = (s_mois / s_mois.sum()).to_dict() if s_mois.sum() > 0 else {m: 1.0 / 12.0 for m in MOIS}
+
+        # Poids d'agence par article (et repli global par agence si l'article est absent)
+        df_art_ag = df_long.groupby(["Article_Norm", "Agence_Norm"], as_index=False)["Vol_Mois"].sum()
+        art_tot = df_art_ag.groupby("Article_Norm", as_index=False)["Vol_Mois"].sum().rename(columns={"Vol_Mois": "Vol_Art"})
+        df_art_ag = df_art_ag.merge(art_tot, on="Article_Norm", how="left")
+        df_art_ag["Part_Ag"] = np.where(df_art_ag["Vol_Art"] > 0, df_art_ag["Vol_Mois"] / df_art_ag["Vol_Art"], 0.0)
 
         ag_ordre = (
-            df_long.groupby("Agence_Norm", as_index=False)["Vol_Mois"]
+            df_art_ag.groupby("Agence_Norm", as_index=False)["Vol_Mois"]
             .sum()
             .sort_values("Vol_Mois", ascending=False)["Agence_Norm"]
             .tolist()
         )
-
-        part_map = {
-            (r["Article_Norm"], r["Agence_Norm"], r["Mois"]): float(r["Part_Article_AM"])
-            for _, r in df_long.iterrows()
-        }
-        ag_glob = df_long.groupby("Agence_Norm")["Vol_Mois"].sum()
+        part_ag_map = {(r["Article_Norm"], r["Agence_Norm"]): float(r["Part_Ag"]) for _, r in df_art_ag.iterrows()}
+        ag_glob = df_art_ag.groupby("Agence_Norm")["Vol_Mois"].sum()
         ag_glob_map = (ag_glob / ag_glob.sum()).to_dict() if ag_glob.sum() > 0 else {}
 
         rows_final = []
         for _, r in df_base.iterrows():
             seg, marq, art = r["Segment"], r["Marque"], r["SKU"]
-            tot_art_part = sum(part_map.get((art, ag, m), 0.0) for ag in ag_ordre for m in MOIS)
+            somme_part_art = sum(part_ag_map.get((art, ag), 0.0) for ag in ag_ordre)
             for ag in ag_ordre:
+                p_ag = part_ag_map.get((art, ag), 0.0) if somme_part_art > 0 else ag_glob_map.get(ag, 0.0)
                 for m in MOIS:
-                    w = part_map.get((art, ag, m), 0.0) if tot_art_part > 0 else ag_glob_map.get(ag, 0.0) / len(MOIS)
                     rows_final.append({
                         "Segment": seg,
                         "Marque": marq,
                         "Article": art,
                         "Agence": ag,
                         "Mois": m,
-                        "Poids_Dispatch": w,
+                        "Poids_Dispatch": p_ag * float(poids_mois_map.get(m, 1.0 / 12.0)),
                     })
 
         return ag_ordre, pd.DataFrame(rows_final), f"Fichier Excel : {fichier_trouve}"
 
     poids_ag_init = {
-        "01-Tanjombato": 0.198268571932, "11-Andranomahery": 0.189439662078,
-        "09-Tamatave": 0.115344200722, "07-Majunga": 0.075137876975,
-        "12-Antsirabe": 0.069963178814, "18-Ambanja": 0.050917231935,
-        "04-Tulear": 0.046908364911, "08-Manakara": 0.045995937787,
-        "03-Usine-Diego": 0.039402884313, "19-Sambava": 0.035253095950,
-        "21-Nosy-Be": 0.032475493113, "05-Fianarantsoa": 0.031521074195,
-        "24-Fort-Dauphin": 0.027330349561, "06-Ihosy": 0.021180052245,
-        "23-Morondava": 0.020862025468,
+        "01-Tanjombato": 0.19845707, "11-Andranomahery": 0.18959447,
+        "09-Tamatave": 0.11506422, "07-Majunga": 0.07485790,
+        "12-Antsirabe": 0.07011798, "18-Ambanja": 0.05089633,
+        "04-Tulear": 0.04659311, "08-Manakara": 0.04615074,
+        "03-Usine-Diego": 0.03955769, "19-Sambava": 0.03488484,
+        "21-Nosy-Be": 0.03263303, "05-Fianarantsoa": 0.03164114,
+        "24-Fort-Dauphin": 0.02726957, "06-Ihosy": 0.02129984,
+        "23-Morondava": 0.02098209,
     }
     saison_init = np.array([
-        0.065398, 0.056048, 0.081488, 0.075870, 0.086150, 0.103963,
-        0.068800, 0.085406, 0.084724, 0.088832, 0.096839, 0.106482,
+        294936.69, 264148.77, 364258.80, 339354.06, 362445.88, 445053.03,
+        349151.73, 417918.00, 385069.91, 404413.73, 488013.95, 485235.44,
     ])
     saison_init = saison_init / saison_init.sum()
     agences_liste = list(poids_ag_init.keys())
@@ -295,7 +294,7 @@ def construire_dispatch_depuis_excel():
                     "Mois": m,
                     "Poids_Dispatch": poids_ag_init[ag] * float(saison_init[idx_m]),
                 })
-    return agences_liste, pd.DataFrame(rows_final), "Poids intégrés par défaut"
+    return agences_liste, pd.DataFrame(rows_final), "Poids intégrés (Base 2027)"
 
 if "dispatch_agences" not in st.session_state or "dispatch_df" not in st.session_state:
     ag_init, df_init, lbl_init = construire_dispatch_depuis_excel()
@@ -999,21 +998,19 @@ with onglet_dispatch:
 
         df_export_global = pd.concat(frames_glob, ignore_index=True)
 
-        df_2027_seg = (
+        df_2027_mois = (
             df_export_global[df_export_global["Année"] == "2027"]
-            .groupby(["Segment", "Mois"], as_index=False)["Valeur"]
+            .groupby(["Mois"], as_index=False)["Valeur"]
             .sum()
-            .pivot(index="Segment", columns="Mois", values="Valeur")
-            .reindex(index=ORDRE_SEGMENTS, columns=MOIS, fill_value=0.0)
-            .fillna(0.0)
+            .set_index("Mois")
+            .reindex(MOIS, fill_value=0.0)
         )
-        df_2027_seg["Total 2027"] = df_2027_seg.sum(axis=1)
-        df_2027_seg.loc["TOTAL 2027"] = df_2027_seg.sum(axis=0)
+        df_2027_mois.loc["TOTAL R0 2027"] = df_2027_mois["Valeur"].sum()
 
         buffer_global = io.BytesIO()
         with pd.ExcelWriter(buffer_global, engine="openpyxl") as writer_glob:
             df_export_global.to_excel(writer_glob, sheet_name="Dispatch_Global_2027_2031", index=False)
-            df_2027_seg.to_excel(writer_glob, sheet_name="Synthese_Mensuelle_2027", index=True)
+            df_2027_mois.to_excel(writer_glob, sheet_name="TOTAL_R0_2027", index=True)
             for ws_name, ws in writer_glob.sheets.items():
                 for col in ws.columns:
                     max_len = max((len(str(cell.value)) for cell in col if cell.value is not None), default=10)
@@ -1021,7 +1018,7 @@ with onglet_dispatch:
 
         buffer_global.seek(0)
         st.download_button(
-            label="📥 Télécharger le Fichier Global (Dispatch 2027–2031 + Synthèse 2027)",
+            label="📥 Télécharger le Fichier Global (Dispatch 2027–2031 + TOTAL R0 2027)",
             data=buffer_global,
             file_name="Dispatch_Global_2027_2031.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
