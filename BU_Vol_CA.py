@@ -152,8 +152,7 @@ TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
 # =====================================================
-# CHARGEMENT DIRECT DEPUIS LE FICHIER EXCEL (Vol par AG_7.xlsx)
-# Colonnes de mois dans les colonnes (1..12 ou janv..déc)
+# CALCUL DES POIDS DEPUIS 'Disp par AG.xlsx'
 # =====================================================
 def _to_float(v):
     if pd.isna(v):
@@ -177,6 +176,7 @@ def _detecter_colonnes_mois(columns):
 
 def construire_dispatch_depuis_excel():
     candidats = [
+        "Disp par AG.xlsx",
         "Vol par AG_7.xlsx",
         "Vol par AG_6.xlsx",
         "Vol par AG_5.xlsx",
