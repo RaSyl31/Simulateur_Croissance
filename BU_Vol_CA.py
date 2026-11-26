@@ -139,14 +139,10 @@ TOTAL_2027 = df_base["Base_2027"].sum()
 mix_2027_calcul = (df_base.groupby("Segment")["Base_2027"].sum() / TOTAL_2027) * 100
 
 # =====================================================
-# CALCUL HIERARCHIQUE DES POIDS DEPUIS 'Volume' (IGNORE 'Poids')
-# Agence -> Segment -> Marque -> Article -> Mois
+# LOGIQUE TCD EXCEL : PART DE CHAQUE ARTICLE PAR (AGENCE, MOIS)
+# A PARTIR DE LA COLONNE 'Volume'
 # =====================================================
-def _normaliser_seg(val):
-    s = str(val).strip()
-    return SEG_MAP_XL.get(s, SEG_MAP_XL.get(s.upper(), s))
-
-def _parse_float_vol(v):
+def _to_float_vol(v):
     if pd.isna(v):
         return 0.0
     if isinstance(v, str):
@@ -154,34 +150,34 @@ def _parse_float_vol(v):
         return float(s) if s != "" else 0.0
     return float(v)
 
-def construire_dispatch_hierarchique_volume(df_source_vol):
+def construire_dispatch_tcd_excel(df_source_vol):
     """
-    Ignore la colonne 'Poids' et calcule la hiérarchie des poids à partir de 'Volume' :
-    Agence -> Segment (dans l'Agence) -> Marque (dans le Segment)
-    -> Article (dans la Marque) -> Mois (dans l'Article),
-    puis normalise par Article afin que la somme des parts sur (Agence, Mois) = 100 %.
+    Reproduit le raisonnement du TCD Excel :
+    pour chaque Article, calcule sa part sur chaque (Agence, Mois)
+    à partir de la colonne 'Volume' du fichier.
     """
     cols_lower = {str(c).strip().lower(): c for c in df_source_vol.columns}
+    col_art = cols_lower.get("article")
     col_ag = cols_lower.get("agence")
     col_vol = cols_lower.get("volume")
-    col_seg = cols_lower.get("segment")
-    col_marq = cols_lower.get("marque")
-    col_art = cols_lower.get("article")
     col_mois = cols_lower.get("mois")
 
-    if col_ag is None or col_vol is None:
-        raise ValueError(f"Colonnes 'Agence' et 'Volume' requises. Trouvées : {list(df_source_vol.columns)}")
+    if col_art is None or col_ag is None or col_vol is None:
+        raise ValueError(f"Colonnes 'Article', 'Agence' et 'Volume' requises. Trouvées : {list(df_source_vol.columns)}")
 
     df_v = df_source_vol.copy()
+    df_v["Article_Norm"] = df_v[col_art].astype(str).str.strip()
     df_v["Agence_Norm"] = df_v[col_ag].astype(str).str.strip()
     df_v = df_v[
-        df_v[col_ag].notna()
+        (df_v["Article_Norm"] != "")
+        & (df_v["Article_Norm"].str.lower() != "nan")
+        & df_v[col_ag].notna()
         & (df_v["Agence_Norm"] != "0")
         & (df_v["Agence_Norm"] != "")
         & (df_v["Agence_Norm"].str.lower() != "nan")
     ].copy()
 
-    df_v["Vol_Num"] = df_v[col_vol].apply(_parse_float_vol)
+    df_v["Vol_Num"] = df_v[col_vol].apply(_to_float_vol)
     if df_v["Vol_Num"].sum() <= 0:
         raise ValueError("La somme des volumes est nulle.")
 
@@ -195,69 +191,42 @@ def construire_dispatch_hierarchique_volume(df_source_vol):
         else "01"
     )
 
-    # 1. Poids par Agence
-    ag_vol = df_v.groupby("Agence_Norm", as_index=False)["Vol_Num"].sum()
-    tot_vol = ag_vol["Vol_Num"].sum()
-    ag_vol["Poids_Agence"] = ag_vol["Vol_Num"] / tot_vol
-    agences_liste = ag_vol.sort_values("Poids_Agence", ascending=False)["Agence_Norm"].tolist()
-
-    # 2. Poids du Segment dans l'Agence
-    df_v["Seg_Norm"] = df_v[col_seg].apply(_normaliser_seg) if col_seg is not None else "Global"
-    ag_seg = df_v.groupby(["Agence_Norm", "Seg_Norm"], as_index=False)["Vol_Num"].sum()
-    ag_seg_tot = ag_seg.groupby("Agence_Norm")["Vol_Num"].transform("sum")
-    ag_seg["Poids_Seg_Dans_Ag"] = np.where(ag_seg_tot > 0, ag_seg["Vol_Num"] / ag_seg_tot, 0.0)
-
-    # 3. Poids de la Marque dans (Agence, Segment)
-    df_v["Marque_Norm"] = df_v[col_marq].astype(str).str.strip() if col_marq is not None else "Global"
-    ag_sm = df_v.groupby(["Agence_Norm", "Seg_Norm", "Marque_Norm"], as_index=False)["Vol_Num"].sum()
-    ag_sm_tot = ag_sm.groupby(["Agence_Norm", "Seg_Norm"])["Vol_Num"].transform("sum")
-    ag_sm["Poids_Marque_Dans_Ag_Seg"] = np.where(ag_sm_tot > 0, ag_sm["Vol_Num"] / ag_sm_tot, 0.0)
-
-    # 4. Poids de l'Article dans (Agence, Segment, Marque)
-    df_v["Article_Norm"] = df_v[col_art].astype(str).str.strip() if col_art is not None else "Global"
-    ag_sma = df_v.groupby(["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm"], as_index=False)["Vol_Num"].sum()
-    ag_sma_tot = ag_sma.groupby(["Agence_Norm", "Seg_Norm", "Marque_Norm"])["Vol_Num"].transform("sum")
-    ag_sma["Poids_Art_Dans_Ag_SM"] = np.where(ag_sma_tot > 0, ag_sma["Vol_Num"] / ag_sma_tot, 0.0)
-
-    # 5. Poids du Mois dans (Agence, Segment, Marque, Article)
-    ag_smam = df_v.groupby(["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm", "Mois_Norm"], as_index=False)["Vol_Num"].sum()
-    ag_smam_tot = ag_smam.groupby(["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm"])["Vol_Num"].transform("sum")
-    ag_smam["Poids_Mois_Dans_Ag_SMA"] = np.where(ag_smam_tot > 0, ag_smam["Vol_Num"] / ag_smam_tot, 1.0 / 12.0)
-
-    hier = (
-        ag_smam[["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm", "Mois_Norm", "Poids_Mois_Dans_Ag_SMA"]]
-        .merge(ag_sma[["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm", "Poids_Art_Dans_Ag_SM"]], on=["Agence_Norm", "Seg_Norm", "Marque_Norm", "Article_Norm"], how="left")
-        .merge(ag_sm[["Agence_Norm", "Seg_Norm", "Marque_Norm", "Poids_Marque_Dans_Ag_Seg"]], on=["Agence_Norm", "Seg_Norm", "Marque_Norm"], how="left")
-        .merge(ag_seg[["Agence_Norm", "Seg_Norm", "Poids_Seg_Dans_Ag"]], on=["Agence_Norm", "Seg_Norm"], how="left")
-        .merge(ag_vol[["Agence_Norm", "Poids_Agence"]], on="Agence_Norm", how="left")
-    )
-    hier["Poids_Hierarchique"] = (
-        hier["Poids_Agence"]
-        * hier["Poids_Seg_Dans_Ag"]
-        * hier["Poids_Marque_Dans_Ag_Seg"]
-        * hier["Poids_Art_Dans_Ag_SM"]
-        * hier["Poids_Mois_Dans_Ag_SMA"]
+    art_tot = (
+        df_v.groupby("Article_Norm", as_index=False)["Vol_Num"]
+        .sum()
+        .rename(columns={"Vol_Num": "Vol_Article_Total"})
     )
 
-    tot_art = hier.groupby("Article_Norm")["Poids_Hierarchique"].transform("sum")
-    hier["Part_Article_AM"] = np.where(tot_art > 0, hier["Poids_Hierarchique"] / tot_art, 0.0)
+    art_am = df_v.groupby(["Article_Norm", "Agence_Norm", "Mois_Norm"], as_index=False)["Vol_Num"].sum()
+    art_am = art_am.merge(art_tot, on="Article_Norm", how="left")
+    art_am["Part_Article_AM"] = np.where(
+        art_am["Vol_Article_Total"] > 0,
+        art_am["Vol_Num"] / art_am["Vol_Article_Total"],
+        0.0,
+    )
 
-    poids_sku_am_map = {
+    ag_ordre = (
+        df_v.groupby("Agence_Norm", as_index=False)["Vol_Num"]
+        .sum()
+        .sort_values("Vol_Num", ascending=False)["Agence_Norm"]
+        .tolist()
+    )
+
+    part_map = {
         (r["Article_Norm"], r["Agence_Norm"], r["Mois_Norm"]): float(r["Part_Article_AM"])
-        for _, r in hier.iterrows()
+        for _, r in art_am.iterrows()
     }
-    poids_ag_fallback = dict(zip(ag_vol["Agence_Norm"], ag_vol["Poids_Agence"]))
+
+    ag_glob = df_v.groupby("Agence_Norm")["Vol_Num"].sum()
+    ag_glob_map = (ag_glob / ag_glob.sum()).to_dict()
 
     rows_final = []
     for _, r in df_base.iterrows():
         seg, marq, art = r["Segment"], r["Marque"], r["SKU"]
-        has_sku = any((art, ag, m) in poids_sku_am_map and poids_sku_am_map[(art, ag, m)] > 0 for ag in agences_liste for m in MOIS)
-        for ag in agences_liste:
+        tot_art_part = sum(part_map.get((art, ag, m), 0.0) for ag in ag_ordre for m in MOIS)
+        for ag in ag_ordre:
             for m in MOIS:
-                if has_sku:
-                    w = poids_sku_am_map.get((art, ag, m), 0.0)
-                else:
-                    w = poids_ag_fallback.get(ag, 0.0) / len(MOIS)
+                w = part_map.get((art, ag, m), 0.0) if tot_art_part > 0 else ag_glob_map.get(ag, 0.0) / len(MOIS)
                 rows_final.append({
                     "Segment": seg,
                     "Marque": marq,
@@ -267,22 +236,20 @@ def construire_dispatch_hierarchique_volume(df_source_vol):
                     "Poids_Dispatch": w,
                 })
 
-    return agences_liste, pd.DataFrame(rows_final)
+    return ag_ordre, pd.DataFrame(rows_final)
 
 def dispatch_par_defaut():
-    candidats = ["Vol par AG_5.xlsx", "Vol par AG_4.xlsx", "Vol par AG_3.xlsx", "Vol par AG.xlsx"]
-    for fn in candidats:
+    for fn in ["Vol par AG_5.xlsx", "Vol par AG_4.xlsx", "Vol par AG_3.xlsx", "Vol par AG.xlsx"]:
         if os.path.exists(fn):
             try:
                 xls = pd.ExcelFile(fn)
                 feuille = "Feuil2" if "Feuil2" in xls.sheet_names else xls.sheet_names[0]
                 df_xl = pd.read_excel(fn, sheet_name=feuille)
-                ag_l, df_d = construire_dispatch_hierarchique_volume(df_xl)
-                return ag_l, df_d, f"Fichier local : {fn} (hiérarchie sur 'Volume')"
+                ag_l, df_d = construire_dispatch_tcd_excel(df_xl)
+                return ag_l, df_d, f"Fichier local : {fn} (TCD Article × Agence × Mois sur Volume)"
             except Exception:
                 pass
 
-    # Repli hiérarchique intégré si aucun fichier Excel n'est présent sur le disque
     poids_ag_init = {
         "01-Tanjombato": 0.198268571932, "11-Andranomahery": 0.189439662078,
         "09-Tamatave": 0.115344200722, "07-Majunga": 0.075137876975,
@@ -313,7 +280,7 @@ def dispatch_par_defaut():
                 })
     return agences_liste, pd.DataFrame(rows_final), "Poids intégrés par défaut"
 
-def parser_fichier_volumes_dispatch(uploaded_file):
+def parser_fichier_poids(uploaded_file):
     if uploaded_file.name.lower().endswith(".csv"):
         try:
             df_xl = pd.read_csv(uploaded_file, sep=None, engine="python")
@@ -325,8 +292,8 @@ def parser_fichier_volumes_dispatch(uploaded_file):
         feuille_cible = "Feuil2" if "Feuil2" in xls.sheet_names else xls.sheet_names[0]
         df_xl = pd.read_excel(uploaded_file, sheet_name=feuille_cible)
 
-    ag_l, df_d = construire_dispatch_hierarchique_volume(df_xl)
-    return ag_l, df_d, f"Fichier importé : {uploaded_file.name} (hiérarchie sur 'Volume')"
+    ag_l, df_d = construire_dispatch_tcd_excel(df_xl)
+    return ag_l, df_d, f"Fichier importé : {uploaded_file.name} (TCD Article × Agence × Mois sur Volume)"
 
 if "dispatch_agences" not in st.session_state or "dispatch_df" not in st.session_state:
     ag_init, df_init, lbl_init = dispatch_par_defaut()
@@ -920,11 +887,11 @@ with onglet_agences:
     st.subheader(f"📍 Volumes par Agence & par Mois ({len(AGENCES)} Agences)")
     st.caption(f"Source active : **{st.session_state.source_poids_label}**")
 
-    with st.expander("📤 Importer / Changer le fichier de Volumes (.xlsx ou .csv) — Calcul hiérarchique sur 'Volume'", expanded=False):
+    with st.expander("📤 Importer / Changer le fichier de Volumes (.xlsx ou .csv) — Logique TCD sur 'Volume'", expanded=False):
         col_wp1, col_wp2 = st.columns([3, 1])
         with col_wp1:
             uploaded_poids_file = st.file_uploader(
-                "Charger un fichier (.xlsx ou .csv) contenant 'Agence', 'Volume', ('Segment', 'Marque', 'Article', 'Mois')",
+                "Charger un fichier (.xlsx ou .csv) contenant 'Article', 'Agence', 'Volume', 'Mois'",
                 type=["xlsx", "xls", "csv"],
                 key="upload_poids_agences_file",
             )
@@ -939,7 +906,7 @@ with onglet_agences:
 
         if uploaded_poids_file is not None:
             try:
-                ag_up, df_up_disp, lbl_up = parser_fichier_volumes_dispatch(uploaded_poids_file)
+                ag_up, df_up_disp, lbl_up = parser_fichier_poids(uploaded_poids_file)
                 st.session_state.dispatch_agences = ag_up
                 st.session_state.dispatch_df = df_up_disp
                 st.session_state.source_poids_label = lbl_up
